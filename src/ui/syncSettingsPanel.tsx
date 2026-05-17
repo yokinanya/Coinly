@@ -100,9 +100,9 @@ function reportSyncResult(options: {
   readonly setResolution: (resolution: SyncResolution) => void;
   readonly setMessage: (value: string) => void;
 }): void {
-  if (isRemoteNewer(options.result)) {
+  if (isRemoteNewer(options.result) || isMerged(options.result)) {
     options.applyRemote(withSyncedTargets(options.result.remoteData, options.data, options.settings, options.target, new Date().toISOString()));
-    options.setMessage("已使用较新的远端账本覆盖本地");
+    options.setMessage(options.result.status === "merged" ? "已自动合并本地与远端账本" : "已同步远端账本到本地");
     return;
   }
   if (isResolutionResult(options.result)) {
@@ -117,6 +117,10 @@ function reportSyncResult(options: {
 
 function isRemoteNewer(result: SyncResult): result is SyncResult & { readonly remoteData: AppData } {
   return result.status === "remote-newer" && Boolean(result.remoteData);
+}
+
+function isMerged(result: SyncResult): result is SyncResult & { readonly remoteData: AppData } {
+  return result.status === "merged" && Boolean(result.remoteData);
 }
 
 function isResolutionResult(result: SyncResult): result is SyncResult & SyncResolution {

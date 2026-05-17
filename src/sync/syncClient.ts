@@ -6,6 +6,7 @@ import { authorizeGoogleDrive, deleteGoogleDrive, disconnectGoogleDrive, readGoo
 import { authorizeOneDrive, deleteOneDrive, disconnectOneDrive, readOneDrive, testOneDrive, writeOneDrive } from "./oneDriveAdapter";
 import { deleteS3, readS3, writeS3 } from "./s3Adapter";
 import { DEFAULT_OBJECT_KEY } from "./syncDefaults";
+import { mergeSyncData } from "./syncMerge";
 import type { RemoteSnapshot } from "./syncTypes";
 import { deleteWebDav, readWebDav, testWebDav, writeWebDav } from "./webdavAdapter";
 
@@ -20,6 +21,7 @@ export type SyncStatus =
   | "throttled"
   | "up-to-date"
   | "uploaded"
+  | "merged"
   | "remote-newer"
   | "remote-plaintext"
   | "remote-conflict"
@@ -143,6 +145,15 @@ async function syncActiveTargets(data: AppData, targets: readonly ActiveTarget[]
   const remoteData = await readRemoteData(targets);
   const decision = consistencyDecision(data, remoteData);
   if (decision) return decision;
+  const remotes = remoteData.map((item) => item.data);
+  const merged = mergeSyncData(data, remotes);
+  if (merged.conflict) return { status: "remote-conflict", remoteData: merged.conflict };
+  if (merged.data) {
+    await writeTargets(targets, await encryptAppData(merged.data, currentUnlockState()), latestRemoteVersion(remoteData));
+    return { status: "merged", remoteData: merged.data };
+  }
+  const newer = newestRemote(remotes, dataTimestamp(data));
+  if (newer) return { status: "remote-newer", remoteData: newer };
   await writeTargets(targets, await encryptAppData(data, currentUnlockState()), latestRemoteVersion(remoteData));
   return { status: "uploaded" };
 }
@@ -224,8 +235,6 @@ function consistencyDecision(local: AppData, remoteData: readonly RemoteData[]):
   if (isSameDataTimestamp(local, latestRemote) && canonicalSyncData(local) === canonicalSyncData(latestRemote)) {
     return { status: "up-to-date" };
   }
-  const newer = newestRemote(remotes, dataTimestamp(local));
-  if (newer) return { status: "remote-newer", remoteData: newer };
   return undefined;
 }
 
@@ -264,7 +273,13 @@ export function dataTimestamp(data: AppData): number {
 }
 
 export function canonicalSyncData(data: AppData): string {
-  return JSON.stringify({ ...data, localVersion: undefined, syncSettings: undefined });
+  return JSON.stringify({
+    ...data,
+    localVersion: undefined,
+    syncSettings: undefined,
+    aiSettings: undefined,
+    uiSettings: undefined,
+  });
 }
 
 function activeTargets(settings: SyncSettings): readonly ActiveTarget[] {

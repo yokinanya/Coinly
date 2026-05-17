@@ -38,6 +38,101 @@ describe("sync consistency decisions", () => {
     expect(result.remoteData?.updatedAt).toBe(backup.updatedAt);
   });
 
+  it("merges local and remote transaction additions and writes the merged data", async () => {
+    const local = withTransaction(initialData(), "local-transaction", SMALL_NEWER_DAYS);
+    const remote = withTransaction(initialData(), "remote-transaction", LARGER_NEWER_DAYS);
+    const fetchMock = stubFetch([
+      new Response(await encrypted(remote), { status: 200 }),
+      new Response("", { status: 200 }),
+    ]);
+
+    const result = await syncData(local, singleTargetSettings());
+
+    expect(result.status).toBe("merged");
+    expect(result.remoteData?.transactions.map((item) => item.id)).toEqual([
+      "local-transaction",
+      "remote-transaction",
+    ]);
+    expect((await decryptedPutData(fetchMock)).transactions).toHaveLength(2);
+  });
+
+  it("merges a local entity edit with a remote transaction addition", async () => {
+    const local = withAccountName(initialData(), "本地账户", LARGER_NEWER_DAYS);
+    const remote = withTransaction(initialData(), "remote-transaction", SMALL_NEWER_DAYS);
+    stubFetch([
+      new Response(await encrypted(remote), { status: 200 }),
+      new Response("", { status: 200 }),
+    ]);
+
+    const result = await syncData(local, singleTargetSettings());
+
+    expect(result.status).toBe("merged");
+    expect(result.remoteData?.accounts[0].name).toBe("本地账户");
+    expect(result.remoteData?.transactions[0]?.id).toBe("remote-transaction");
+  });
+
+  it("chooses the newer entity when both sides changed the same entity", async () => {
+    const base = initialData();
+    const local = withAccountName(base, "本地账户", SMALL_NEWER_DAYS);
+    const remote = withAccountName(base, "远端账户", LARGER_NEWER_DAYS);
+    stubFetch([
+      new Response(await encrypted(remote), { status: 200 }),
+      new Response("", { status: 200 }),
+    ]);
+
+    const result = await syncData(local, singleTargetSettings());
+
+    expect(result.status).toBe("merged");
+    expect(result.remoteData?.accounts[0].name).toBe("远端账户");
+  });
+
+  it("keeps one-sided missing entities instead of treating them as deletes", async () => {
+    const local = initialData();
+    const remote = { ...withUpdatedAt(local, SMALL_NEWER_DAYS), categories: local.categories.slice(1) };
+    stubFetch([
+      new Response(await encrypted(remote), { status: 200 }),
+      new Response("", { status: 200 }),
+    ]);
+
+    const result = await syncData(local, singleTargetSettings());
+
+    expect(result.status).toBe("merged");
+    expect(result.remoteData?.categories).toHaveLength(local.categories.length);
+  });
+
+  it("reports a conflict for same-entity edits with the same timestamp", async () => {
+    const local = withAccountName(initialData(), "本地账户", SMALL_NEWER_DAYS);
+    const remote = { ...local, accounts: [{ ...local.accounts[0], name: "远端账户" }] };
+    stubFetch([new Response(await encrypted(remote), { status: 200 })]);
+
+    const result = await syncData(local, singleTargetSettings());
+
+    expect(result.status).toBe("remote-conflict");
+    expect(result.remoteData?.accounts[0].name).toBe("远端账户");
+  });
+
+  it("writes merged data back to every enabled target", async () => {
+    const local = withTransaction(initialData(), "local-transaction", SMALL_NEWER_DAYS);
+    const primary = withTransaction(initialData(), "primary-transaction", SMALL_NEWER_DAYS);
+    const backup = withTransaction(initialData(), "backup-transaction", LARGER_NEWER_DAYS);
+    const fetchMock = stubFetch([
+      new Response(await encrypted(primary), { status: 200 }),
+      new Response(await encrypted(backup), { status: 200 }),
+      new Response("", { status: 200 }),
+      new Response("", { status: 200 }),
+    ]);
+
+    const result = await syncData(local, multiTargetSettings());
+
+    expect(result.status).toBe("merged");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(result.remoteData?.transactions.map((item) => item.id)).toEqual([
+      "local-transaction",
+      "primary-transaction",
+      "backup-transaction",
+    ]);
+  });
+
   it("stops for plaintext remote payloads before irreversible overwrite", async () => {
     const data = initialData();
     stubFetch([new Response(JSON.stringify(data), { status: 200 })]);
@@ -45,6 +140,20 @@ describe("sync consistency decisions", () => {
     const result = await syncData(data, singleTargetSettings());
 
     expect(result.status).toBe("remote-plaintext");
+  });
+
+  it("ignores private local settings when detecting remote conflicts", async () => {
+    const local = {
+      ...initialData(),
+      aiSettings: { provider: "openai-compatible" as const, endpoint: "https://api.example", model: "model", apiKey: "key" },
+      uiSettings: { theme: "dark" as const },
+    };
+    const remote = { ...local, aiSettings: undefined, uiSettings: { theme: "system" as const } };
+    stubFetch([new Response(await encrypted(remote), { status: 200 })]);
+
+    const result = await syncData(local, singleTargetSettings());
+
+    expect(result.status).toBe("up-to-date");
   });
 
   it("rejects invalid remote payloads instead of silently overwriting them", async () => {
@@ -98,8 +207,44 @@ async function encrypted(data: AppData): Promise<string> {
   return encryptAppData(data, currentUnlockState());
 }
 
+async function decryptedPutData(fetchMock: ReturnType<typeof stubFetch>): Promise<AppData> {
+  const init = fetchMock.mock.calls[1]?.[1] as Parameters<typeof fetch>[1] | undefined;
+  const payload = String(init?.body ?? "");
+  const { decryptAppData } = await import("../storage/encryption");
+  return decryptAppData(payload, currentUnlockState());
+}
+
 function withUpdatedAt(data: AppData, days: number): AppData {
   return { ...data, updatedAt: new Date(Date.parse(data.updatedAt) + days * dayMs()).toISOString() };
+}
+
+function withAccountName(data: AppData, name: string, days: number): AppData {
+  const updatedAt = new Date(Date.parse(data.updatedAt) + days * dayMs()).toISOString();
+  return {
+    ...data,
+    updatedAt,
+    accounts: [{ ...data.accounts[0], name, updatedAt }],
+  };
+}
+
+function withTransaction(data: AppData, id: string, days: number): AppData {
+  const updatedAt = new Date(Date.parse(data.updatedAt) + days * dayMs()).toISOString();
+  return {
+    ...data,
+    updatedAt,
+    transactions: [{
+      id,
+      createdAt: updatedAt,
+      updatedAt,
+      kind: "expense",
+      accountId: data.accounts[0].id,
+      amount: 10,
+      currency: data.accounts[0].currency,
+      occurredAt: updatedAt,
+      tagIds: [],
+      note: id,
+    }],
+  };
 }
 
 function dayMs(): number {

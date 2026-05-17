@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import type { AppData, SyncSettings, SyncTarget } from "../domain/types";
 import { overwriteRemote, overwriteSyncTarget } from "../sync/syncClient";
+import { collectionDiffTotal, hasDiff, summarizeSyncDiff, type CollectionDiffSummary, type SyncDiffSummary } from "../sync/syncDiff";
 import { Button, Modal } from "./metis";
 
 export type SyncResolutionStatus = "remote-conflict" | "remote-divergent" | "remote-plaintext";
@@ -22,9 +24,18 @@ export function SyncResolutionPanel(props: {
   const footer = resolution
     ? <ResolutionActions {...props} resolution={resolution} />
     : undefined;
+  const remoteData = resolution?.remoteData;
+  const diff = useMemo(() => {
+    return remoteData ? summarizeSyncDiff(props.data, remoteData) : undefined;
+  }, [props.data, remoteData]);
   return (
     <Modal centered open={Boolean(resolution)} title={resolution ? resolutionTitle(resolution) : ""} footer={footer} onCancel={props.clear}>
-      {resolution && <p>{resolutionDescription(resolution, props.data.updatedAt)}</p>}
+      {resolution && (
+        <div className="space-y-4">
+          <p>{resolutionDescription(resolution, props.data.updatedAt)}</p>
+          {diff && <DiffSummary summary={diff} />}
+        </div>
+      )}
     </Modal>
   );
 }
@@ -93,6 +104,39 @@ function resolutionDescription(resolution: SyncResolution, localUpdatedAt: strin
     return `本地更新时间 ${formatTime(localUpdatedAt)}，远端更新时间 ${formatTime(remoteUpdatedAt)}，时间差距较大。保留本地会覆盖远端，此操作不可逆。`;
   }
   return `本地更新时间 ${formatTime(localUpdatedAt)}，远端更新时间 ${formatTime(remoteUpdatedAt)}，同一时间点内容不一致。请选择保留哪一份。`;
+}
+
+function DiffSummary({ summary }: { readonly summary: SyncDiffSummary }) {
+  if (!hasDiff(summary)) {
+    return <p className="text-sm text-[var(--color-text-secondary)]">本地与远端实体内容一致。</p>;
+  }
+  const collections = summary.collections.filter((item) => collectionDiffTotal(item) > 0);
+  return (
+    <div className="space-y-2 rounded border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-sm">
+      <p className="font-medium text-[var(--color-text)]">数据差异摘要</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {collections.map((item) => <CollectionDiff key={item.key} summary={item} />)}
+        {(summary.currencyLocalOnly > 0 || summary.currencyRemoteOnly > 0) && (
+          <p className="text-[var(--color-text-secondary)]">
+            币种：本地独有 {summary.currencyLocalOnly}，远端独有 {summary.currencyRemoteOnly}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CollectionDiff({ summary }: { readonly summary: CollectionDiffSummary }) {
+  return (
+    <p className="text-[var(--color-text-secondary)]">
+      {summary.label}：
+      本地独有 {summary.localOnly}，
+      远端独有 {summary.remoteOnly}，
+      本地较新 {summary.localNewer}，
+      远端较新 {summary.remoteNewer}，
+      同时冲突 {summary.sameTimeConflicts}
+    </p>
+  );
 }
 
 function errorMessage(error: unknown, fallback: string): string {

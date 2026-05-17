@@ -176,9 +176,9 @@ function handleAutoSyncResult(
     readonly setMessage: (value: string) => void;
   },
 ): void {
-  if (result.status === "remote-newer" && result.remoteData) {
+  if ((result.status === "remote-newer" || result.status === "merged") && result.remoteData) {
     options.setData(result.remoteData);
-    options.setMessage("已用较新的云端账本更新本地账本");
+    options.setMessage(result.status === "merged" ? "已自动合并本地与远端账本" : "已同步远端账本到本地");
     return;
   }
   if (isResolutionResult(result)) {
