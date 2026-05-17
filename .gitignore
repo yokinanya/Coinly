@@ -38,3 +38,6 @@ proxy/webdav/.wrangler/
 proxy/webdav/.dev.vars
 proxy/webdav/dist/
 proxy/webdav/node_modules/
+
+.vercel
+.env*.local
