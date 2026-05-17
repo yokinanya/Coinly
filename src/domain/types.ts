@@ -129,6 +129,7 @@ export interface AiSettings {
 
 export interface UiSettings {
   readonly theme: ThemeMode;
+  readonly syncTargetLastSyncedAt?: Readonly<Record<string, string>>;
   readonly recentEntry?: {
     readonly accountId?: string;
     readonly currency?: CurrencyCode;

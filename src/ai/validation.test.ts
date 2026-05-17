@@ -25,8 +25,24 @@ describe("validateTransactionDraft", () => {
       currency: "CNY",
       categoryId: data.categories[0].id,
       tagIds: [data.tags[0].id],
+      occurredAt: "2026-05-16",
       note: "星巴克",
     });
+  });
+
+  it("drops time from AI dates", () => {
+    const data = dataWithTag();
+    const result = validateTransactionDraft({
+      kind: "expense",
+      account: "日常账户",
+      amount: 38,
+      currency: "CNY",
+      date: "2026-05-16T22:10:00.000Z",
+      note: "星巴克",
+    }, data);
+
+    expect(result.valid).toBe(true);
+    expect(result.draft?.occurredAt).toBe("2026-05-16");
   });
 
   it("reports unmatched AI values explicitly", () => {

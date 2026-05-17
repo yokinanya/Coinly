@@ -19,6 +19,7 @@ type ProviderAction = "authorizing" | "disconnecting" | "testing" | "syncing" | 
 
 export function ProviderList(props: {
   readonly targets: readonly SyncTarget[];
+  readonly lastSyncedAt: Readonly<Record<string, string>>;
   readonly data: AppData;
   readonly setTargets: (targets: readonly SyncTarget[]) => void;
   readonly onSyncResult: (result: SyncResult, target?: SyncTarget) => void;
@@ -82,6 +83,7 @@ function ProviderItem(props: {
   readonly target: SyncTarget;
   readonly index: number;
   readonly targets: readonly SyncTarget[];
+  readonly lastSyncedAt: Readonly<Record<string, string>>;
   readonly data: AppData;
   readonly setTargets: (targets: readonly SyncTarget[]) => void;
   readonly onSyncResult: (result: SyncResult, target?: SyncTarget) => void;
@@ -92,7 +94,7 @@ function ProviderItem(props: {
   return (
     <div className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
-        <ProviderMeta target={props.target} index={props.index} />
+        <ProviderMeta target={props.target} index={props.index} lastSyncedAt={props.lastSyncedAt[targetIdentity(props.target)]} />
         <ProviderActions
           {...props}
           edit={() => setEditing(true)}
@@ -127,12 +129,15 @@ function ProviderItem(props: {
   );
 }
 
-function ProviderMeta(props: { readonly target: SyncTarget; readonly index: number }) {
+function ProviderMeta(props: { readonly target: SyncTarget; readonly index: number; readonly lastSyncedAt?: string }) {
   return (
     <span className="min-w-0">
       <span className="block text-sm font-medium text-[var(--color-text)]">{targetDisplayName(props.target, props.index)}</span>
       <span className="text-xs text-[var(--color-text-secondary)]">
         {providerMetaText(props.target)}
+      </span>
+      <span className="block text-xs text-[var(--color-text-muted)]">
+        上次同步：{lastSyncText(props.lastSyncedAt)}
       </span>
     </span>
   );
@@ -144,6 +149,13 @@ function providerMetaText(target: SyncTarget): string {
     return `${label} / ${target.username}`;
   }
   return label;
+}
+
+function lastSyncText(value?: string): string {
+  if (!value) return "从未同步";
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return "未知";
+  return new Date(timestamp).toLocaleString("zh-CN");
 }
 
 function ProviderActions(props: {

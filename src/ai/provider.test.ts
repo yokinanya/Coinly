@@ -20,6 +20,7 @@ describe("systemPrompt", () => {
     expect(content).toContain("expense");
     expect(content).toContain("不要输出中文类型");
     expect(content).toContain("tagIds 必须是标签 id 数组");
+    expect(content).toContain("不要输出具体时间");
   });
 });
 

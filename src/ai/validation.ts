@@ -1,5 +1,6 @@
 import { TRANSACTION_KINDS } from "../domain/constants";
 import type { AppData, TransactionDraft, TransactionKind } from "../domain/types";
+import dayjs from "dayjs";
 
 export interface CandidateValidation {
   readonly valid: boolean;
@@ -82,6 +83,8 @@ function normalizeTags(value: unknown, data: AppData): readonly string[] | null 
 
 function normalizeDate(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? undefined : new Date(timestamp).toISOString();
+  const dateOnly = value.trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+  if (dateOnly) return dateOnly;
+  const date = dayjs(value);
+  return date.isValid() ? date.format("YYYY-MM-DD") : undefined;
 }

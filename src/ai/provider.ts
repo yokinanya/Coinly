@@ -76,7 +76,7 @@ export function systemPrompt(data: AppData): Record<string, string> {
       `kind 只能从这些枚举中选择：${TRANSACTION_KINDS.join(", ")}。不要输出中文类型，不要发明新类型。`,
       "常见映射：消费/付款/买东西=expense，工资/收款=income，退款/退货=refund，转账=transfer，信用卡还款=credit_payment。",
       "accountId 必须使用下方账户的 id；categoryId 必须使用下方分类的 id；tagIds 必须是标签 id 数组，没有标签时输出 []。",
-      "currency 必须使用当前账本币种代码；occurredAt 必须输出 ISO 8601 日期时间字符串；amount 必须是正数。",
+      "currency 必须使用当前账本币种代码；occurredAt 只输出日期，不要输出具体时间；amount 必须是正数。",
       "无法确定分类或标签时省略 categoryId 或使用空 tagIds，不要输出不存在的名称。",
       `当前日期：${new Date().toISOString()}`,
       `币种：${JSON.stringify(data.currencies)}`,
