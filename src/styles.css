@@ -162,6 +162,30 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
+@media (max-width: 640px) {
+  .metis-picker-dropdown {
+    left: max(0.5rem, var(--safe-left)) !important;
+    right: max(0.5rem, var(--safe-right)) !important;
+    width: auto !important;
+    max-width: calc(100vw - 1rem);
+  }
+
+  .metis-picker-dropdown .metis-picker-datetime-panel {
+    flex-direction: column;
+    max-height: min(70vh, 34rem);
+    overflow-y: auto;
+  }
+
+  .metis-picker-dropdown .metis-picker-panel,
+  .metis-picker-dropdown .metis-picker-datetime-panel {
+    width: 100%;
+  }
+
+  .metis-picker-dropdown .metis-picker-time-panel {
+    border-top: 1px solid var(--color-border);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -26,7 +26,7 @@ export function TransactionForm(props: {
       {showsCategory(props.draft.kind) && <SelectField label="分类" value={props.draft.categoryId ?? ""} options={categoryOptions(props.data, props.draft.kind)} onChange={(categoryId) => update({ categoryId: categoryId || undefined })} />}
       {props.draft.kind === "transfer" && <TransferFields data={props.data} draft={props.draft} update={update} />}
       {props.draft.kind === "credit_payment" && <PaymentSourceField data={props.data} draft={props.draft} update={update} />}
-      <DateField label="日期" value={props.draft.occurredAt} showTime onChange={(occurredAt) => update({ occurredAt })} />
+      <DateField label="日期" value={props.draft.occurredAt} onChange={(occurredAt) => update({ occurredAt })} />
       <TagPicker data={props.data} selected={props.draft.tagIds} onChange={(tagIds) => update({ tagIds })} />
       <div className="md:col-span-2">
         <TextAreaField label="备注" value={props.draft.note} onChange={(note) => update({ note })} />
