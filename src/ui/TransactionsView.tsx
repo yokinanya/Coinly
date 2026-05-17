@@ -6,10 +6,11 @@ import type { AppData, Transaction, TransactionDraft } from "../domain/types";
 import { AnalysisDrawer } from "./AnalysisView";
 import { ConfirmDialog, ErrorBanner, PageHeader } from "./common";
 import { CreditStatementsDrawer } from "./CreditStatementsView";
-import { dateOnly, money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
-import { Button, Checkbox, Drawer, Table } from "./metis";
+import { Button, Drawer } from "./metis";
+import { TransactionTable } from "./TransactionTable";
 import { TransactionForm } from "./TransactionForm";
+import { visibleSelectedCount, visibleSelectedIds } from "./transactionSelection";
 import { draftFromTransaction } from "./transactionDraft";
 
 export function TransactionsView(props: { readonly data: AppData; readonly setData: (data: AppData) => void }) {
@@ -28,6 +29,7 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
   const filteredTransactions = useMemo(() => {
     return props.data.transactions.filter((transaction) => matchesStatsFilter(transaction, statsFilter));
   }, [props.data.transactions, statsFilter]);
+  const selectedVisibleCount = visibleSelectedCount(selectedIds, filteredTransactions);
 
   return (
     <section className="space-y-5">
@@ -37,7 +39,7 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
           <>
             <Button onClick={() => setAnalysisOpen(true)}><BarChart3 size={16} />分析</Button>
             <Button onClick={() => setStatementsOpen(true)}><ReceiptText size={16} />账期</Button>
-            <Button variant="danger" disabled={selectedIds.length === 0} onClick={() => setBatchConfirmOpen(true)}>批量删除 {selectedIds.length || ""}</Button>
+            <Button variant="danger" disabled={selectedVisibleCount === 0} onClick={() => setBatchConfirmOpen(true)}>批量删除 {selectedVisibleCount || ""}</Button>
           </>
         )}
       />
@@ -75,9 +77,9 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
       <ConfirmDialog
         open={batchConfirmOpen}
         title="批量删除交易"
-        description={`确认删除选中的 ${selectedIds.length} 条交易？`}
+        description={`确认删除选中的 ${selectedVisibleCount} 条交易？`}
         onCancel={() => setBatchConfirmOpen(false)}
-        onConfirm={() => deleteSelectedIds(props, selectedIds, setSelectedIds, setBatchConfirmOpen)}
+        onConfirm={() => deleteSelectedIds(props, visibleSelectedIds(selectedIds, filteredTransactions), setSelectedIds, setBatchConfirmOpen)}
       />
       <AnalysisDrawer open={analysisOpen} data={props.data} onClose={() => setAnalysisOpen(false)} />
       <CreditStatementsDrawer open={statementsOpen} data={props.data} setData={props.setData} onClose={() => setStatementsOpen(false)} />
@@ -119,104 +121,6 @@ function currentDraft(
 ): TransactionDraft | undefined {
   if (!transaction) return undefined;
   return draftState?.id === transaction.id ? draftState.draft : draftFromTransaction(transaction);
-}
-
-function TransactionTable(props: {
-  readonly data: AppData;
-  readonly transactions: readonly Transaction[];
-  readonly accounts: Record<string, string>;
-  readonly categories: Record<string, string>;
-  readonly selectedIds: readonly string[];
-  readonly setSelectedIds: (ids: readonly string[]) => void;
-  readonly onEdit: (transaction: Transaction) => void;
-  readonly onRefund: (transaction: Transaction) => void;
-  readonly onDelete: (transaction: Transaction) => void;
-}) {
-  return (
-    <Table
-      pagination={false}
-      dataSource={[...props.transactions]}
-      rowKey="id"
-      scroll={{ x: 880 }}
-      locale={{ emptyText: "暂无交易" }}
-      columns={transactionColumns(props)}
-    />
-  );
-}
-
-function transactionColumns(props: {
-  readonly data: AppData;
-  readonly transactions: readonly Transaction[];
-  readonly accounts: Record<string, string>;
-  readonly categories: Record<string, string>;
-  readonly selectedIds: readonly string[];
-  readonly setSelectedIds: (ids: readonly string[]) => void;
-  readonly onEdit: (transaction: Transaction) => void;
-  readonly onRefund: (transaction: Transaction) => void;
-  readonly onDelete: (transaction: Transaction) => void;
-}) {
-  return [
-    {
-      title: <Checkbox checked={allSelected(props.transactions, props.selectedIds)} onChange={(checked) => toggleAll(props.transactions, checked, props.setSelectedIds)} />,
-      width: 56,
-      render: (_value: unknown, row: Transaction) => (
-        <Checkbox checked={props.selectedIds.includes(row.id)} onChange={(checked) => toggleOne(props.selectedIds, row.id, checked, props.setSelectedIds)} />
-      ),
-    },
-    { title: "日期", dataIndex: "occurredAt", width: 110, render: (value: string) => dateOnly(value) },
-    {
-      title: "金额",
-      dataIndex: "currency",
-      width: 140,
-      filter: {
-        items: props.data.currencies.map((currency) => ({ label: currency, value: currency })),
-        onFilter: (value: unknown, row: Transaction) => row.currency === value,
-      },
-      render: (_value: string, row: Transaction) => money(row.amount, row.currency),
-    },
-    {
-      title: "账户",
-      dataIndex: "accountId",
-      width: 160,
-      filter: {
-        items: props.data.accounts.map((account) => ({ label: account.name, value: account.id })),
-        onFilter: (value: unknown, row: Transaction) => row.accountId === value,
-      },
-      render: (value: string) => props.accounts[value] ?? "-",
-    },
-    {
-      title: "分类",
-      dataIndex: "categoryId",
-      width: 160,
-      filter: {
-        items: props.data.categories.map((category) => ({ label: category.name, value: category.id })),
-        onFilter: (value: unknown, row: Transaction) => row.categoryId === value,
-      },
-      render: (value?: string) => props.categories[value ?? ""] ?? "-",
-    },
-    {
-      title: "类型",
-      dataIndex: "kind",
-      width: 120,
-      filter: {
-        items: Object.entries(TRANSACTION_KIND_LABELS).map(([value, label]) => ({ label, value })),
-        onFilter: (value: unknown, row: Transaction) => row.kind === value,
-      },
-      render: (value: Transaction["kind"]) => TRANSACTION_KIND_LABELS[value],
-    },
-    { title: "备注", dataIndex: "note", render: (_value: string, row: Transaction) => row.note || "-" },
-    {
-      title: "操作",
-      width: 210,
-      render: (_value: unknown, row: Transaction) => (
-        <span className="flex gap-2">
-          <Button onClick={() => props.onEdit(row)}>编辑</Button>
-          {row.kind === "expense" && <Button onClick={() => props.onRefund(row)}>退款</Button>}
-          <Button variant="danger" onClick={() => props.onDelete(row)}>删除</Button>
-        </span>
-      ),
-    },
-  ];
 }
 
 function RefundDrawer(props: {
@@ -282,31 +186,6 @@ function matchesStatsFilter(transaction: Transaction, filter: UrlFilter): boolea
   if (filter.categoryId && transaction.categoryId !== filter.categoryId) return false;
   if (filter.tagId && !transaction.tagIds.includes(filter.tagId)) return false;
   return true;
-}
-
-function allSelected(transactions: readonly Transaction[], selectedIds: readonly string[]): boolean {
-  return transactions.length > 0 && transactions.every((transaction) => selectedIds.includes(transaction.id));
-}
-
-function toggleAll(
-  transactions: readonly Transaction[],
-  checked: boolean,
-  setSelectedIds: (ids: readonly string[]) => void,
-): void {
-  setSelectedIds(checked ? transactions.map((transaction) => transaction.id) : []);
-}
-
-function toggleOne(
-  selectedIds: readonly string[],
-  id: string,
-  checked: boolean,
-  setSelectedIds: (ids: readonly string[]) => void,
-): void {
-  if (checked) {
-    setSelectedIds(selectedIds.includes(id) ? selectedIds : [...selectedIds, id]);
-    return;
-  }
-  setSelectedIds(selectedIds.filter((item) => item !== id));
 }
 
 function saveTransaction(options: {

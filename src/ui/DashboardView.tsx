@@ -1,18 +1,18 @@
-import { currentMonthTransactions, reportEntries, summarizeByCurrency } from "../domain/analytics";
+import { buildReportIndex, type CurrencySummary } from "../domain/analytics";
 import type { AppData } from "../domain/types";
 import { PageHeader } from "./common";
 import { money } from "./format";
 import { StatsSummary } from "./StatsSummary";
 
 export function DashboardView({ data }: { readonly data: AppData; readonly setData: (data: AppData) => void }) {
-  const monthRows = summarizeByCurrency(currentMonthTransactions(reportEntries(data), new Date()));
+  const report = buildReportIndex(data);
   const pendingRecurring = data.recurringRules.filter((rule) => rule.enabled);
 
   return (
     <section className="space-y-5">
       <PageHeader title="首页" />
       <div className="grid gap-4 lg:grid-cols-2">
-        <SummaryPanel title="本月收支" rows={monthRows} />
+        <SummaryPanel title="本月收支" rows={report.currencySummary} />
         <div className="panel p-4">
           <h2 className="font-semibold text-[var(--color-text)]">订阅规则</h2>
           <div className="mt-3 space-y-2">
@@ -26,12 +26,12 @@ export function DashboardView({ data }: { readonly data: AppData; readonly setDa
           </div>
         </div>
       </div>
-      <StatsSummary data={data} />
+      <StatsSummary data={data} report={report} />
     </section>
   );
 }
 
-function SummaryPanel(props: { readonly title: string; readonly rows: ReturnType<typeof summarizeByCurrency> }) {
+function SummaryPanel(props: { readonly title: string; readonly rows: readonly CurrencySummary[] }) {
   return (
     <div className="panel p-4">
       <h2 className="font-semibold text-[var(--color-text)]">{props.title}</h2>

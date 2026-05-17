@@ -12,7 +12,7 @@ export const TRANSACTION_KINDS: readonly TransactionKind[] = [
   "credit_payment",
 ];
 
-export const RECURRING_INTERVALS: readonly RecurringInterval[] = ["daily", "monthly", "yearly"];
+export const RECURRING_INTERVALS: readonly RecurringInterval[] = ["monthly", "yearly"];
 
 export const DAY_MIN = 1;
 export const DAY_MAX = 31;

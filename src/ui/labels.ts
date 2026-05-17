@@ -18,7 +18,6 @@ export const ACCOUNT_KIND_LABELS: Record<AccountKind, string> = {
 };
 
 export const RECURRING_INTERVAL_LABELS: Record<RecurringInterval, string> = {
-  daily: "每天",
   monthly: "每月",
   yearly: "每年",
 };

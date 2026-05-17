@@ -26,6 +26,20 @@ export interface TagSummary {
   readonly amount: number;
 }
 
+export interface ReportIndex {
+  readonly entries: readonly ReportEntry[];
+  readonly currentMonthEntries: readonly ReportEntry[];
+  readonly currencySummary: readonly CurrencySummary[];
+  readonly categorySummary: readonly CategorySummary[];
+  readonly tagSummary: readonly TagSummary[];
+  readonly monthlyTrends: readonly MonthlyTrend[];
+}
+
+export interface ReportIndexOptions {
+  readonly now?: Date;
+  readonly trendMonths?: number;
+}
+
 export interface ReportEntry {
   readonly kind: "income" | "expense";
   readonly amount: number;
@@ -68,30 +82,28 @@ export function summarizeByCategory(data: AppData, entries = reportEntries(data)
 }
 
 export function monthlyTrends(data: AppData, months = 6, now = new Date()): readonly MonthlyTrend[] {
-  const monthSet = new Set(monthKeys(months, now));
-  const rows = new Map<string, MonthlyTrend>();
-  for (const entry of reportEntries(data)) {
-    const month = entry.occurredAt.slice(0, 7);
-    if (!monthSet.has(month)) continue;
-    const key = `${month}:${entry.currency}`;
-    rows.set(key, applyMonthlyTrend(rows.get(key), entry, month));
-  }
-  return [...rows.values()].sort((left, right) => {
-    return left.month.localeCompare(right.month) || left.currency.localeCompare(right.currency);
-  });
+  return monthlyTrendsFromEntries(reportEntries(data), months, now);
 }
 
 export function summarizeByTag(data: AppData, entries = reportEntries(data)): readonly TagSummary[] {
   const rows = new Map<string, TagSummary>();
-  for (const entry of entries) {
-    if (entry.kind !== "expense") continue;
-    for (const tagId of entry.tagIds) {
-      const key = `${tagId}:${entry.currency}`;
-      const current = rows.get(key);
-      rows.set(key, { tagId, currency: entry.currency, amount: (current?.amount ?? 0) + entry.amount });
-    }
-  }
+  addTagSummaries(rows, entries);
   return [...rows.values()].sort((left, right) => right.amount - left.amount);
+}
+
+export function buildReportIndex(data: AppData, options: ReportIndexOptions = {}): ReportIndex {
+  const now = options.now ?? new Date();
+  const trendMonths = options.trendMonths ?? 6;
+  const entries = reportEntries(data);
+  const currentMonthEntries = currentMonthTransactions(entries, now);
+  return {
+    entries,
+    currentMonthEntries,
+    currencySummary: summarizeByCurrency(currentMonthEntries),
+    categorySummary: summarizeByCategory(data, currentMonthEntries),
+    tagSummary: summarizeByTag(data, currentMonthEntries),
+    monthlyTrends: monthlyTrendsFromEntries(entries, trendMonths, now),
+  };
 }
 
 export function currentMonthTransactions(
@@ -105,6 +117,24 @@ export function currentMonthTransactions(
   });
 }
 
+export function monthlyTrendsFromEntries(
+  entries: readonly ReportEntry[],
+  months = 6,
+  now = new Date(),
+): readonly MonthlyTrend[] {
+  const monthSet = new Set(monthKeys(months, now));
+  const rows = new Map<string, MonthlyTrend>();
+  for (const entry of entries) {
+    const month = entry.occurredAt.slice(0, 7);
+    if (!monthSet.has(month)) continue;
+    const key = `${month}:${entry.currency}`;
+    rows.set(key, applyMonthlyTrend(rows.get(key), entry, month));
+  }
+  return [...rows.values()].sort((left, right) => {
+    return left.month.localeCompare(right.month) || left.currency.localeCompare(right.currency);
+  });
+}
+
 export function spendingForBudget(data: AppData, budgetId: string): number {
   const budget = data.budgets.find((item) => item.id === budgetId);
   if (!budget) {
@@ -113,6 +143,20 @@ export function spendingForBudget(data: AppData, budgetId: string): number {
   return reportEntries(data)
     .filter((entry) => matchesBudget(entry, budget.categoryIds, budget.tagIds))
     .reduce((total, entry) => total + entry.amount, 0);
+}
+
+function addTagSummaries(
+  rows: Map<string, TagSummary>,
+  entries: readonly ReportEntry[],
+): void {
+  for (const entry of entries) {
+    if (entry.kind !== "expense") continue;
+    for (const tagId of entry.tagIds) {
+      const key = `${tagId}:${entry.currency}`;
+      const current = rows.get(key);
+      rows.set(key, { tagId, currency: entry.currency, amount: (current?.amount ?? 0) + entry.amount });
+    }
+  }
 }
 
 function applyCurrencySummary(

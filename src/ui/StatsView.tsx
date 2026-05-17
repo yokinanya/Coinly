@@ -1,5 +1,5 @@
 import { ListFilter } from "lucide-react";
-import { currentMonthTransactions, monthlyTrends, reportEntries, summarizeByCategory, summarizeByTag } from "../domain/analytics";
+import { buildReportIndex, type MonthlyTrend } from "../domain/analytics";
 import type { AppData, CurrencyCode } from "../domain/types";
 import { money } from "./format";
 import { PageHeader, SectionPanel } from "./common";
@@ -8,23 +8,23 @@ import { FadeIn } from "./motion";
 const TREND_MONTHS = 6;
 
 export function StatsView(props: { readonly data: AppData; readonly onFilter: (filter: StatsFilter) => void }) {
-  const entries = currentMonthTransactions(reportEntries(props.data), new Date());
+  const report = buildReportIndex(props.data, { trendMonths: TREND_MONTHS });
   const categories = Object.fromEntries(props.data.categories.map((item) => [item.id, item.name]));
   const tags = Object.fromEntries(props.data.tags.map((item) => [item.id, item.name]));
   return (
     <section className="space-y-5">
       <PageHeader title="统计" />
-      <TrendSection data={props.data} />
+      <TrendSection rows={report.monthlyTrends} />
       <RankSection
         title="本月分类支出"
         emptyText="本月暂无分类支出"
-        rows={summarizeByCategory(props.data, entries).map((item) => ({ id: item.categoryId, label: categories[item.categoryId] ?? "未命名分类", currency: item.currency, amount: item.amount }))}
+        rows={report.categorySummary.map((item) => ({ id: item.categoryId, label: categories[item.categoryId] ?? "未命名分类", currency: item.currency, amount: item.amount }))}
         onFilter={(row) => props.onFilter({ categoryId: row.id, currency: row.currency })}
       />
       <RankSection
         title="本月标签支出"
         emptyText="本月暂无标签支出"
-        rows={summarizeByTag(props.data, entries).map((item) => ({ id: item.tagId, label: tags[item.tagId] ?? "未命名标签", currency: item.currency, amount: item.amount }))}
+        rows={report.tagSummary.map((item) => ({ id: item.tagId, label: tags[item.tagId] ?? "未命名标签", currency: item.currency, amount: item.amount }))}
         onFilter={(row) => props.onFilter({ tagId: row.id, currency: row.currency })}
       />
     </section>
@@ -37,8 +37,7 @@ export interface StatsFilter {
   readonly currency?: CurrencyCode;
 }
 
-function TrendSection({ data }: { readonly data: AppData }) {
-  const rows = monthlyTrends(data, TREND_MONTHS);
+function TrendSection({ rows }: { readonly rows: readonly MonthlyTrend[] }) {
   return (
     <SectionPanel title="月度趋势">
       {rows.length === 0
@@ -48,7 +47,7 @@ function TrendSection({ data }: { readonly data: AppData }) {
   );
 }
 
-function TrendBar(props: { readonly row: ReturnType<typeof monthlyTrends>[number] }) {
+function TrendBar(props: { readonly row: MonthlyTrend }) {
   const max = Math.max(props.row.income, props.row.expense, 1);
   return (
     <div className="row-card space-y-2 p-3 text-sm">

@@ -11,7 +11,7 @@ export type TransactionKind =
 
 export type CategoryDirection = "income" | "expense";
 
-export type RecurringInterval = "daily" | "monthly" | "yearly";
+export type RecurringInterval = "monthly" | "yearly";
 
 export type SyncProvider = "s3-compatible" | "onedrive" | "google-drive" | "webdav";
 

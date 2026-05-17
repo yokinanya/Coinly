@@ -1,16 +1,13 @@
-import { reportEntries, summarizeByCategory, summarizeByCurrency } from "../domain/analytics";
-import type { ReportEntry } from "../domain/analytics";
+import type { ReportIndex, TagSummary } from "../domain/analytics";
 import type { AppData } from "../domain/types";
 import { money } from "./format";
 import type { ReactNode } from "react";
 
-export function StatsSummary({ data }: { readonly data: AppData }) {
-  const scoped = currentMonthData(data);
-  const scopedEntries = currentMonthEntries(data);
-  const currencyRows = summarizeByCurrency(scopedEntries);
-  const categoryRows = summarizeByCategory(scoped, scopedEntries);
+export function StatsSummary({ data, report }: { readonly data: AppData; readonly report: ReportIndex }) {
+  const currencyRows = report.currencySummary;
+  const categoryRows = report.categorySummary;
   const categories = Object.fromEntries(data.categories.map((item) => [item.id, item.name]));
-  const tagRows = tagSummary(data, scopedEntries);
+  const tags = Object.fromEntries(data.tags.map((item) => [item.id, item.name]));
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <StatsPanel title="币种汇总">
@@ -31,9 +28,9 @@ export function StatsSummary({ data }: { readonly data: AppData }) {
         ))}
       </StatsPanel>
       <StatsPanel title="标签排行">
-        {tagRows.map((row) => (
-          <div key={`${row.name}:${row.currency}`} className="row-card flex justify-between p-3 text-sm">
-            <span>{row.name}</span>
+        {report.tagSummary.map((row) => (
+          <div key={`${row.tagId}:${row.currency}`} className="row-card flex justify-between p-3 text-sm">
+            <span>{tagName(tags, row)}</span>
             <span>{money(row.amount, row.currency)}</span>
           </div>
         ))}
@@ -53,23 +50,6 @@ function StatsPanel(props: { readonly title: string; readonly children: ReactNod
   );
 }
 
-function currentMonthData(data: AppData): AppData {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
-  return { ...data, transactions: data.transactions.filter((item) => item.occurredAt >= start && item.occurredAt < end) };
-}
-
-function currentMonthEntries(data: AppData) {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
-  return reportEntries(data).filter((item) => item.occurredAt >= start && item.occurredAt < end);
-}
-
-function tagSummary(data: AppData, entries: readonly ReportEntry[]) {
-  return data.tags.flatMap((tag) => {
-    const rows = summarizeByCurrency(entries.filter((item) => item.kind === "expense" && item.tagIds.includes(tag.id)));
-    return rows.map((row) => ({ name: tag.name, currency: row.currency, amount: row.expense }));
-  }).filter((row) => row.amount > 0);
+function tagName(tags: Record<string, string>, row: TagSummary): string {
+  return tags[row.tagId] ?? "未命名标签";
 }

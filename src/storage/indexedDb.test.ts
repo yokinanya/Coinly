@@ -117,6 +117,33 @@ describe("indexedDb data validation", () => {
     expect(() => parseImportedData(JSON.stringify(data))).toThrow("订阅规则 rule 引用不存在的账户 missing");
   });
 
+  it("rejects imported recurring rules with unsupported intervals", () => {
+    const base = initialData();
+    const data = {
+      ...base,
+      recurringRules: [{
+        id: "rule",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        name: "订阅",
+        enabled: true,
+        interval: "daily",
+        nextRunAt: "2026-02-01T00:00:00.000Z",
+        transaction: {
+          kind: "expense",
+          accountId: base.accounts[0].id,
+          amount: 10,
+          currency: "CNY",
+          occurredAt: "2026-01-01T00:00:00.000Z",
+          tagIds: [],
+          note: "",
+        },
+      }],
+    };
+
+    expect(() => parseImportedData(JSON.stringify(data))).toThrow("周期不受支持");
+  });
+
   it("treats identical app data as unchanged", () => {
     const data = initialData();
 

@@ -1,5 +1,7 @@
 import { bumpVersion, createId, nowIso } from "./factory";
-import type { AppData, RecurringRule, Transaction } from "./types";
+import type { Account, AppData, RecurringRule, Transaction } from "./types";
+
+export const LOOKBACK_MONTHS = 1;
 
 export function materializeDueRecurring(data: AppData, now = new Date()): AppData {
   const dueRules = data.recurringRules.filter((rule) => rule.enabled && rule.nextRunAt <= now.toISOString());
@@ -13,6 +15,45 @@ export function materializeDueRecurring(data: AppData, now = new Date()): AppDat
     recurringRules,
     transactions: [...data.transactions, ...created],
   });
+}
+
+export function accountCurrencyOptions(account: Account): readonly string[] {
+  if (account.kind === "credit") {
+    return account.currencyCodes?.length ? account.currencyCodes : [account.currency];
+  }
+  return [account.currency];
+}
+
+export function currencyForAccount(account: Account, currentCurrency: string): string {
+  const currencies = accountCurrencyOptions(account);
+  return currencies.includes(currentCurrency) ? currentCurrency : currencies[0];
+}
+
+export function defaultNextRunAt(interval: RecurringRule["interval"], now = new Date()): string {
+  const date = startOfDay(now);
+  if (interval === "monthly") date.setMonth(date.getMonth() + 1);
+  if (interval === "yearly") date.setFullYear(date.getFullYear() + 1);
+  return date.toISOString();
+}
+
+export function earliestAllowedStartAt(now = new Date()): string {
+  const date = startOfDay(now);
+  date.setMonth(date.getMonth() - LOOKBACK_MONTHS);
+  return date.toISOString();
+}
+
+export function validateRecurringRule(data: AppData, rule: RecurringRule, now = new Date()): void {
+  const account = data.accounts.find((item) => item.id === rule.transaction.accountId);
+  if (!account) throw new Error("支付方式不存在");
+  if (!accountCurrencyOptions(account).includes(rule.transaction.currency)) {
+    throw new Error("支付币种与支付方式不匹配");
+  }
+  if (!Number.isFinite(new Date(rule.nextRunAt).getTime())) {
+    throw new Error("开始日期无效");
+  }
+  if (rule.nextRunAt < earliestAllowedStartAt(now)) {
+    throw new Error("开始日期不能早于一个月前");
+  }
 }
 
 function transactionFromRule(rule: RecurringRule): Transaction {
@@ -36,9 +77,6 @@ function advanceRuleIfDue(rule: RecurringRule, now: Date): RecurringRule {
 
 function nextRun(value: string, interval: RecurringRule["interval"]): string {
   const date = new Date(value);
-  if (interval === "daily") {
-    date.setDate(date.getDate() + 1);
-  }
   if (interval === "monthly") {
     date.setMonth(date.getMonth() + 1);
   }
@@ -46,4 +84,8 @@ function nextRun(value: string, interval: RecurringRule["interval"]): string {
     date.setFullYear(date.getFullYear() + 1);
   }
   return date.toISOString();
+}
+
+function startOfDay(value: Date): Date {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
 }

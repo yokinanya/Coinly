@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { budgetPeriodRange, createBase, foreignBudgetSpending, spendingForBudgetPeriod, upsertEntity } from "../../domain/operations";
+import { buildReportIndex } from "../../domain/analytics";
+import type { ReportEntry } from "../../domain/analytics";
+import { budgetPeriodRange, createBase, foreignBudgetSpendingEntries, spendingForBudgetPeriodEntries, upsertEntity } from "../../domain/operations";
 import type { Budget } from "../../domain/types";
 import { ConfirmDialog, EmptyState } from "../common";
 import { money } from "../format";
@@ -47,22 +49,31 @@ function BudgetCards(props: {
   readonly onEdit: (budget: Budget) => void;
   readonly onDelete: (budget: Budget) => void;
 }) {
+  const report = buildReportIndex(props.data);
   if (props.data.budgets.length === 0) return <EmptyState>暂无预算。</EmptyState>;
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-      {props.data.budgets.map((budget) => <BudgetCard key={budget.id} data={props.data} budget={budget} onEdit={props.onEdit} onDelete={props.onDelete} />)}
+      {props.data.budgets.map((budget) => (
+        <BudgetCard
+          key={budget.id}
+          budget={budget}
+          entries={report.entries}
+          onEdit={props.onEdit}
+          onDelete={props.onDelete}
+        />
+      ))}
     </div>
   );
 }
 
 function BudgetCard(props: {
-  readonly data: ManagerProps["data"];
   readonly budget: Budget;
+  readonly entries: readonly ReportEntry[];
   readonly onEdit: (budget: Budget) => void;
   readonly onDelete: (budget: Budget) => void;
 }) {
-  const spent = spendingForBudgetPeriod(props.data, props.budget);
-  const foreign = foreignBudgetSpending(props.data, props.budget);
+  const spent = spendingForBudgetPeriodEntries(props.entries, props.budget);
+  const foreign = foreignBudgetSpendingEntries(props.entries, props.budget);
   const percent = Math.min(100, Math.round((spent / props.budget.amount) * 100));
   return (
     <article className="panel flex min-h-44 flex-col justify-between gap-4 p-4">

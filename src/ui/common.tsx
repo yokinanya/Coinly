@@ -127,6 +127,7 @@ export function DateField(props: {
   readonly label: string;
   readonly value: string;
   readonly showTime?: boolean;
+  readonly disabledDate?: (date: Dayjs) => boolean;
   readonly onChange: (value: string) => void;
 }) {
   const value = props.value ? dayjs(props.value) : undefined;
@@ -139,6 +140,7 @@ export function DateField(props: {
         format={format}
         showTime={props.showTime ? { format: "HH:mm" } : false}
         value={value?.isValid() ? value : undefined}
+        disabledDate={props.disabledDate}
         onChange={(_dateString, date) => props.onChange(formatDateValue(date, Boolean(props.showTime)))}
       />
     </label>

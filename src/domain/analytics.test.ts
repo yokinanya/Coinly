@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initialData } from "./factory";
-import { monthlyTrends, reportEntries, spendingForBudget, summarizeByCategory, summarizeByCurrency, summarizeByTag } from "./analytics";
+import { buildReportIndex, monthlyTrends, reportEntries, spendingForBudget, summarizeByCategory, summarizeByCurrency, summarizeByTag } from "./analytics";
 import type { ReportEntry } from "./analytics";
 import type { AppData, Transaction } from "./types";
 
@@ -90,6 +90,40 @@ describe("summarizeByCurrency", () => {
     ]);
     expect(summarizeByCategory(data)).toEqual([
       { categoryId: categoryId ?? "", currency: "CNY", amount: 60 },
+    ]);
+  });
+
+  it("builds a reusable report index matching standalone summaries", () => {
+    const data = creditFixture(true);
+    const now = new Date("2026-02-15T00:00:00.000Z");
+    const entries = reportEntries(data);
+    const index = buildReportIndex(data, { now, trendMonths: 2 });
+
+    expect(index.entries).toEqual(entries);
+    expect(index.currentMonthEntries).toEqual(entries);
+    expect(index.currencySummary).toEqual(summarizeByCurrency(entries));
+    expect(index.categorySummary).toEqual(summarizeByCategory(data, entries));
+    expect(index.tagSummary).toEqual(summarizeByTag(data, entries));
+    expect(index.monthlyTrends).toEqual(monthlyTrends(data, 2, now));
+  });
+
+  it("indexes tag spending across multiple tags, currencies, refunds, and statements", () => {
+    const base = creditFixture(true);
+    const cash = { ...base.accounts[0], id: "cash", kind: "cash" as const };
+    const data = {
+      ...base,
+      accounts: [...base.accounts, cash],
+      tags: [{ id: "daily", name: "日常", createdAt: base.updatedAt, updatedAt: base.updatedAt }],
+      transactions: [
+        ...base.transactions,
+        { ...makeTransaction("cash", 20, "USD", "expense"), tagIds: ["daily"], occurredAt: "2026-02-10T00:00:00.000Z" },
+        { ...makeTransaction("cash", 5, "USD", "expense"), kind: "refund" as const, tagIds: ["daily"], occurredAt: "2026-02-11T00:00:00.000Z" },
+      ],
+    };
+
+    expect(buildReportIndex(data, { now: new Date("2026-02-15T00:00:00.000Z") }).tagSummary).toEqual([
+      { tagId: "daily", currency: "CNY", amount: 105 },
+      { tagId: "daily", currency: "USD", amount: 15 },
     ]);
   });
 });

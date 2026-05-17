@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createStatementForAccount } from "../domain/operations";
-import { deleteStatement, revokeStatementSettlement, settleStatement, statementTransactions, summarizeStatement } from "../domain/statements";
+import { deleteStatement, revokeStatementSettlement, settleStatement, statementDetails } from "../domain/statements";
 import type { AppData, CreditCardStatement, CurrencyCode, Transaction } from "../domain/types";
 import { ConfirmDialog, EmptyState, ErrorBanner, SelectField, SuccessBanner, TextField } from "./common";
 import { money } from "./format";
@@ -90,13 +90,12 @@ function StatementPanel(props: {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const account = props.data.accounts.find((item) => item.id === props.statement.accountId);
-  const rows = summarizeStatement(props.data.transactions, props.statement);
-  const details = statementTransactions(props.data.transactions, props.statement);
+  const details = statementDetails(props.data.transactions, props.statement);
   return (
     <div className="panel p-4">
-      <StatementSummary accountName={account?.name ?? "信用卡账期"} statement={props.statement} rows={rows} details={details} />
+      <StatementSummary accountName={account?.name ?? "信用卡账期"} statement={props.statement} rows={details.totals} details={details.transactions} />
       <StatementButtons statement={props.statement} onDelete={() => setDeleteOpen(true)} onDetail={() => setDetailOpen(true)} onSettle={() => setSettlementOpen(true)} onRevoke={() => setConfirmOpen(true)} />
-      <DetailDrawer open={detailOpen} statement={props.statement} transactions={details} onClose={() => setDetailOpen(false)} />
+      <DetailDrawer open={detailOpen} statement={props.statement} transactions={details.transactions} onClose={() => setDetailOpen(false)} />
       <SettlementDrawer data={props.data} statement={props.statement} open={settlementOpen} setData={props.setData} setMessage={props.setMessage} onClose={() => setSettlementOpen(false)} />
       <ConfirmDialog open={confirmOpen} title="撤销结算" description="撤销后会移除该账期对应的还款记录。" onCancel={() => setConfirmOpen(false)} onConfirm={() => revoke(props, setConfirmOpen)} />
       <ConfirmDialog open={deleteOpen} title="删除账期" description="删除后会移除该账期记录；如果账期已结算，也会删除对应还款记录。" onCancel={() => setDeleteOpen(false)} onConfirm={() => removeStatement(props, setDeleteOpen)} />

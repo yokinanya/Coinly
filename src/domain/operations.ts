@@ -124,15 +124,30 @@ export function budgetPeriodRange(budget: Budget, now = new Date()): readonly [s
 }
 
 export function spendingForBudgetPeriod(data: AppData, budget: Budget, now = new Date()): number {
+  return spendingForBudgetPeriodEntries(reportEntries(data), budget, now);
+}
+
+export function spendingForBudgetPeriodEntries(
+  entries: readonly ReportEntry[],
+  budget: Budget,
+  now = new Date(),
+): number {
   const [start, end] = budgetPeriodRange(budget, now);
-  return reportEntries(data)
+  return entries
     .filter((entry) => matchesBudgetPeriod(entry, budget, start, end))
     .reduce((total, entry) => total + entry.amount, 0);
 }
 
 export function foreignBudgetSpending(data: AppData, budget: Budget): readonly ReportEntry[] {
+  return foreignBudgetSpendingEntries(reportEntries(data), budget);
+}
+
+export function foreignBudgetSpendingEntries(
+  entries: readonly ReportEntry[],
+  budget: Budget,
+): readonly ReportEntry[] {
   const [start, end] = budgetPeriodRange(budget);
-  return reportEntries(data).filter((entry) => {
+  return entries.filter((entry) => {
     return matchesBudgetScope(entry, budget) && entry.currency !== budget.currency
       && entry.occurredAt >= start && entry.occurredAt < end;
   });

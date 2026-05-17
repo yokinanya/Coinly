@@ -6,6 +6,11 @@ export interface StatementCurrencyTotal {
   readonly amount: number;
 }
 
+export interface StatementDetails {
+  readonly transactions: readonly Transaction[];
+  readonly totals: readonly StatementCurrencyTotal[];
+}
+
 export function statementTransactions(
   transactions: readonly Transaction[],
   statement: CreditCardStatement,
@@ -18,15 +23,30 @@ export function statementTransactions(
   });
 }
 
+export function statementDetails(
+  transactions: readonly Transaction[],
+  statement: CreditCardStatement,
+): StatementDetails {
+  const rows = new Map<CurrencyCode, number>();
+  const details = transactions.filter((transaction) => {
+    const matches = transaction.accountId === statement.accountId
+      && transaction.kind === "expense"
+      && transaction.occurredAt >= statement.startAt
+      && transaction.occurredAt <= statement.endAt;
+    if (matches) rows.set(transaction.currency, (rows.get(transaction.currency) ?? 0) + transaction.amount);
+    return matches;
+  });
+  return {
+    transactions: details,
+    totals: [...rows.entries()].map(([currency, amount]) => ({ currency, amount })),
+  };
+}
+
 export function summarizeStatement(
   transactions: readonly Transaction[],
   statement: CreditCardStatement,
 ): readonly StatementCurrencyTotal[] {
-  const rows = new Map<CurrencyCode, number>();
-  for (const transaction of statementTransactions(transactions, statement)) {
-    rows.set(transaction.currency, (rows.get(transaction.currency) ?? 0) + transaction.amount);
-  }
-  return [...rows.entries()].map(([currency, amount]) => ({ currency, amount }));
+  return statementDetails(transactions, statement).totals;
 }
 
 export function settleStatement(

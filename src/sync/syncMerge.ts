@@ -51,14 +51,20 @@ function mergeEntities<T extends EntityBase>(
   local: readonly T[],
   remote: readonly T[],
 ): { readonly entities?: readonly T[]; readonly conflict?: T } {
-  const ids = [...new Set([...local.map((item) => item.id), ...remote.map((item) => item.id)])];
+  const localById = entityMap(local);
+  const remoteById = entityMap(remote);
+  const ids = [...new Set([...localById.keys(), ...remoteById.keys()])];
   const entities: T[] = [];
   for (const id of ids) {
-    const entity = mergedEntity(local.find((item) => item.id === id), remote.find((item) => item.id === id));
+    const entity = mergedEntity(localById.get(id), remoteById.get(id));
     if (entity.conflict) return { conflict: entity.conflict };
     entities.push(entity.value);
   }
   return { entities };
+}
+
+function entityMap<T extends EntityBase>(entities: readonly T[]): ReadonlyMap<string, T> {
+  return new Map(entities.map((entity) => [entity.id, entity]));
 }
 
 function mergedEntity<T extends EntityBase>(

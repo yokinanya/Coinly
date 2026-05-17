@@ -1,4 +1,4 @@
-import { DEFAULT_CURRENCIES } from "../domain/constants";
+import { DEFAULT_CURRENCIES, RECURRING_INTERVALS } from "../domain/constants";
 import { APP_SCHEMA_VERSION } from "../domain/factory";
 import type { AppData, EntityBase } from "../domain/types";
 
@@ -146,6 +146,7 @@ function validationErrors(data: AppData): readonly string[] {
     ...duplicateEntityErrors(data),
     ...referenceErrors(data),
     ...transactionShapeErrors(data),
+    ...recurringRuleShapeErrors(data),
   ];
 }
 
@@ -166,6 +167,15 @@ function transactionShapeErrors(data: AppData): readonly string[] {
     if (transaction.kind === "credit_payment" && !data.accounts.some((account) => account.id === transaction.accountId && account.kind === "credit")) {
       errors.push(`交易 ${transaction.id} 的还款账户不是信用卡`);
     }
+    return errors;
+  });
+}
+
+function recurringRuleShapeErrors(data: AppData): readonly string[] {
+  return data.recurringRules.flatMap((rule) => {
+    const errors: string[] = [];
+    if (!RECURRING_INTERVALS.includes(rule.interval)) errors.push(`订阅规则 ${rule.id} 的周期不受支持`);
+    if (!Number.isFinite(new Date(rule.nextRunAt).getTime())) errors.push(`订阅规则 ${rule.id} 的开始日期无效`);
     return errors;
   });
 }

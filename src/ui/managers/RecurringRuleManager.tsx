@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { RECURRING_INTERVALS } from "../../domain/constants";
 import { createBase, upsertEntity } from "../../domain/operations";
+import { accountCurrencyOptions, currencyForAccount, defaultNextRunAt, earliestAllowedStartAt, validateRecurringRule } from "../../domain/recurring";
 import type { Account, CurrencyCode, RecurringRule } from "../../domain/types";
 import { ConfirmDialog, DateField, EmptyState, TextAreaField } from "../common";
 import { money } from "../format";
@@ -13,12 +14,14 @@ import type { ManagerProps } from "./ManagerCommon";
 export function RecurringRuleManager({ data, setData, setMessage }: ManagerProps) {
   const account = data.accounts[0];
   const [draft, setDraft] = useState<RecurringRule>(() => defaultRecurring(account?.id ?? "", account?.currency ?? "CNY"));
+  const [dateTouched, setDateTouched] = useState(false);
   const [pending, setPending] = useState<RecurringRule>();
   const [open, setOpen] = useState(false);
   if (!account) return <EmptyState>请先创建账户。</EmptyState>;
   const save = () => runUpdate(() => {
     requireName(draft.name);
     requirePositive(draft.transaction.amount);
+    validateRecurringRule(data, draft);
     setData(upsertEntity(data, "recurringRules", { ...draft, updatedAt: new Date().toISOString() }));
   }, setMessage) && setOpen(false);
   const remove = () => {
@@ -30,17 +33,25 @@ export function RecurringRuleManager({ data, setData, setMessage }: ManagerProps
   return (
     <section className="space-y-4">
       <div className="flex justify-end">
-        <Button variant="primary" onClick={() => editRule(defaultRecurring(account.id, account.currency), setDraft, setOpen)}>新建</Button>
+        <Button variant="primary" onClick={() => createRule(account, setDraft, setDateTouched, setOpen)}>新建</Button>
       </div>
-      <RecurringList rules={data.recurringRules} onEdit={(rule) => editRule(rule, setDraft, setOpen)} onDelete={setPending} />
+      <RecurringList rules={data.recurringRules} onEdit={(rule) => editRule(rule, setDraft, setDateTouched, setOpen)} onDelete={setPending} />
       <ManagerDrawer open={open} title="订阅规则" contentClassName="space-y-6 py-1" onClose={() => setOpen(false)} onSave={save}>
         <Field label="名称" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
-        <SelectField label="周期" value={draft.interval} options={RECURRING_INTERVALS} labels={RECURRING_INTERVAL_LABELS} onChange={(interval) => setDraft({ ...draft, interval: interval as RecurringRule["interval"] })} />
+        <SelectField label="周期" value={draft.interval} options={RECURRING_INTERVALS} labels={RECURRING_INTERVAL_LABELS} onChange={(interval) => setDraft(changeInterval(draft, interval as RecurringRule["interval"], dateTouched))} />
         <div className="py-0.5">
-          <DateField label="下次执行" value={draft.nextRunAt} onChange={(nextRunAt) => setDraft({ ...draft, nextRunAt })} />
+          <DateField
+            label="开始日期"
+            value={draft.nextRunAt}
+            disabledDate={(date) => date.startOf("day").toDate().toISOString() < earliestAllowedStartAt()}
+            onChange={(nextRunAt) => {
+              setDateTouched(true);
+              setDraft({ ...draft, nextRunAt });
+            }}
+          />
         </div>
         <SelectField label="支付方式" value={draft.transaction.accountId} options={data.accounts.map((item) => item.id)} labels={accountLabels(data.accounts)} onChange={(accountId) => setDraft(changeAccount(draft, data.accounts, accountId))} />
-        <SelectField label="支付币种" value={draft.transaction.currency} options={currencyOptions(data.accounts, draft.transaction.accountId, data.currencies)} onChange={(currency) => setDraft({ ...draft, transaction: { ...draft.transaction, currency: currency as CurrencyCode } })} />
+        <SelectField label="支付币种" value={draft.transaction.currency} options={currencyOptions(data.accounts, draft.transaction.accountId)} onChange={(currency) => setDraft({ ...draft, transaction: { ...draft.transaction, currency: currency as CurrencyCode } })} />
         <Field label="金额" value={draft.transaction.amount} onChange={(amount) => setDraft({ ...draft, transaction: { ...draft.transaction, amount: Number(amount) } })} />
         <div className="py-0.5">
           <TextAreaField label="备注" value={draft.transaction.note} onChange={(note) => setDraft({ ...draft, transaction: { ...draft.transaction, note } })} />
@@ -89,11 +100,36 @@ function RecurringRow(props: {
 }
 
 function defaultRecurring(accountId: string, currency: Account["currency"]): RecurringRule {
-  return { ...createBase(), name: "订阅", enabled: true, interval: "monthly", nextRunAt: new Date().toISOString(), transaction: { kind: "expense", accountId, amount: 1, currency, occurredAt: new Date().toISOString(), tagIds: [], note: "订阅记账" } };
+  const interval: RecurringRule["interval"] = "monthly";
+  return {
+    ...createBase(),
+    name: "订阅",
+    enabled: true,
+    interval,
+    nextRunAt: defaultNextRunAt(interval),
+    transaction: { kind: "expense", accountId, amount: 1, currency, occurredAt: new Date().toISOString(), tagIds: [], note: "订阅记账" },
+  };
 }
 
-function editRule(rule: RecurringRule, setDraft: (rule: RecurringRule) => void, setOpen: (open: boolean) => void) {
+function createRule(
+  account: Account,
+  setDraft: (rule: RecurringRule) => void,
+  setDateTouched: (touched: boolean) => void,
+  setOpen: (open: boolean) => void,
+): void {
+  setDraft(defaultRecurring(account.id, account.currency));
+  setDateTouched(false);
+  setOpen(true);
+}
+
+function editRule(
+  rule: RecurringRule,
+  setDraft: (rule: RecurringRule) => void,
+  setDateTouched: (touched: boolean) => void,
+  setOpen: (open: boolean) => void,
+): void {
   setDraft(rule);
+  setDateTouched(true);
   setOpen(true);
 }
 
@@ -107,10 +143,9 @@ function accountLabels(accounts: readonly Account[]): Record<string, string> {
 function currencyOptions(
   accounts: readonly Account[],
   accountId: string,
-  currencies: readonly CurrencyCode[],
 ): readonly string[] {
   const account = accounts.find((item) => item.id === accountId);
-  return account?.currencyCodes?.length ? account.currencyCodes : currencies;
+  return account ? accountCurrencyOptions(account) : [];
 }
 
 function changeAccount(rule: RecurringRule, accounts: readonly Account[], accountId: string): RecurringRule {
@@ -120,7 +155,19 @@ function changeAccount(rule: RecurringRule, accounts: readonly Account[], accoun
     transaction: {
       ...rule.transaction,
       accountId,
-      currency: account?.currency ?? rule.transaction.currency,
+      currency: account ? currencyForAccount(account, rule.transaction.currency) : rule.transaction.currency,
     },
+  };
+}
+
+function changeInterval(
+  rule: RecurringRule,
+  interval: RecurringRule["interval"],
+  dateTouched: boolean,
+): RecurringRule {
+  return {
+    ...rule,
+    interval,
+    nextRunAt: dateTouched ? rule.nextRunAt : defaultNextRunAt(interval),
   };
 }
