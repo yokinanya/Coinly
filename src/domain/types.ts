@@ -13,8 +13,7 @@ export type CategoryDirection = "income" | "expense";
 
 export type RecurringInterval = "daily" | "monthly" | "yearly";
 
-export type SyncProvider = "s3-compatible" | "onedrive" | "google-drive" | "weiyun";
-export type LegacySyncProvider = "s3";
+export type SyncProvider = "s3-compatible" | "onedrive" | "google-drive" | "webdav";
 
 export type ThemeMode = "system" | "light" | "dark";
 
@@ -106,6 +105,10 @@ export interface SyncTarget {
   readonly driveFolderId?: string;
   readonly accessToken?: string;
   readonly proxyBaseUrl?: string;
+  readonly directoryPath?: string;
+  readonly webdavUrl?: string;
+  readonly webdavUsername?: string;
+  readonly webdavPassword?: string;
   readonly accountId?: string;
   readonly username?: string;
   readonly accountType?: "personal" | "work";
@@ -114,15 +117,7 @@ export interface SyncTarget {
 export interface SyncSettings {
   readonly enabled: boolean;
   readonly targets?: readonly SyncTarget[];
-  readonly primary?: SyncTarget;
-  readonly backup?: SyncTarget;
   readonly lastSyncedAt?: string;
-  readonly provider?: SyncProvider | LegacySyncProvider;
-  readonly endpoint?: string;
-  readonly bucket?: string;
-  readonly objectKey?: string;
-  readonly accessKey?: string;
-  readonly username?: string;
 }
 
 export interface AiSettings {

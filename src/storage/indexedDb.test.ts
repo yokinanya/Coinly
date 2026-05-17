@@ -10,69 +10,6 @@ describe("indexedDb data validation", () => {
     expect(data.uiSettings?.theme).toBe("system");
   });
 
-  it("imports older data with missing currencies and legacy settlement fields", () => {
-    const current = initialData();
-    const legacy = {
-      ...current,
-      accounts: [
-        {
-          id: "card",
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-          name: "信用卡",
-          kind: "credit",
-          currency: "CNY",
-        },
-        {
-          id: "cash",
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-          name: "现金",
-          kind: "cash",
-          currency: "CNY",
-        },
-      ],
-      schemaVersion: undefined,
-      currencies: undefined,
-      statements: [{
-        id: "statement",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        accountId: "card",
-        startAt: "2026-01-01T00:00:00.000Z",
-        endAt: "2026-01-31T23:59:59.000Z",
-        primaryCurrency: "CNY",
-        paid: true,
-        settlementTransactionId: "payment",
-      }],
-      transactions: [{
-        id: "payment",
-        createdAt: "2026-02-05T00:00:00.000Z",
-        updatedAt: "2026-02-05T00:00:00.000Z",
-        kind: "credit_payment",
-        accountId: "card",
-        relatedAccountId: "cash",
-        amount: 128,
-        currency: "CNY",
-        occurredAt: "2026-02-05T00:00:00.000Z",
-        tagIds: [],
-        note: "legacy payment",
-        statementId: "statement",
-      }],
-    };
-
-    const data = parseImportedData(JSON.stringify(legacy));
-
-    expect(data.currencies).toContain("CNY");
-    expect(data.schemaVersion).toBe(APP_SCHEMA_VERSION);
-    expect(data.statements[0]).toMatchObject({
-      settledAt: "2026-02-05T00:00:00.000Z",
-      settlementAccountId: "cash",
-      settlementAmount: 128,
-      settlementCurrency: "CNY",
-    });
-  });
-
   it("rejects invalid imported data", () => {
     expect(() => parseImportedData(JSON.stringify({ transactions: [] }))).toThrow("导入文件不是有效的 Coinly 数据");
   });

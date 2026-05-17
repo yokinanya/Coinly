@@ -11,7 +11,6 @@ export type { DataSummary, ImportPreview };
 const DB_NAME = "coinly";
 const DB_VERSION = 2;
 const STORE_NAME = "app";
-const BACKUP_STORE_NAME = "backups";
 const DATA_KEY = "data";
 
 export interface SaveToken {
@@ -29,16 +28,7 @@ type StoredAppEntry = StoredAppValue | StoredAppRecord;
 
 export type StoredVaultState =
   | { readonly kind: "empty" }
-  | { readonly kind: "encrypted"; readonly encryptedData: string }
-  | { readonly kind: "legacy"; readonly data: AppData };
-
-export interface BackupRecord {
-  readonly id: string;
-  readonly createdAt: string;
-  readonly summary: DataSummary;
-  readonly encryptedData: string;
-  readonly data?: AppData;
-}
+  | { readonly kind: "encrypted"; readonly encryptedData: string };
 
 export async function inspectStoredVault(): Promise<StoredVaultState> {
   const db = await openDatabase();
@@ -82,43 +72,10 @@ export async function exportData(data: AppData): Promise<string> {
   return encryptAppData(data, currentUnlockState());
 }
 
-export async function createBackup(data: AppData): Promise<BackupRecord> {
-  const timestamp = new Date().toISOString();
-  const record = {
-    id: crypto.randomUUID(),
-    createdAt: timestamp,
-    summary: dataSummary(data),
-    encryptedData: await encryptAppData(data, currentUnlockState()),
-  };
+export async function clearStoredVault(): Promise<void> {
   const db = await openDatabase();
-  await writeBackup(db, record);
+  await removeData(db);
   db.close();
-  return record;
-}
-
-export async function listBackups(): Promise<readonly BackupRecord[]> {
-  const db = await openDatabase();
-  const backups = await readBackups(db);
-  db.close();
-  return [...backups].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-}
-
-export async function deleteBackup(id: string): Promise<void> {
-  const db = await openDatabase();
-  await removeBackup(db, id);
-  db.close();
-}
-
-export async function readBackupData(id: string): Promise<ImportPreview> {
-  const db = await openDatabase();
-  const backup = await readBackup(db, id);
-  db.close();
-  if (!backup) throw new Error("备份不存在");
-  const data = backup.encryptedData
-    ? await decryptAppData(backup.encryptedData, currentUnlockState())
-    : migrateData(requireLegacyBackupData(backup));
-  assertValidAppData(data);
-  return { data: migrateData(data), summary: dataSummary(data) };
 }
 
 export async function previewImportData(value: string): Promise<ImportPreview> {
@@ -138,14 +95,11 @@ export function previewImportedData(value: string): ImportPreview {
 function storedVaultState(value: StoredAppEntry | undefined): StoredVaultState {
   if (!value) return { kind: "empty" };
   if (typeof value === "string") {
-    return isEncryptedPackage(value)
-      ? { kind: "encrypted", encryptedData: value }
-      : { kind: "legacy", data: parsePlainImportedData(value) };
+    if (!isEncryptedPackage(value)) throw new Error("本地账本数据格式已过时，请清空后重新创建");
+    return { kind: "encrypted", encryptedData: value };
   }
-  if (isStoredAppRecord(value)) {
-    return storedVaultState(value.data);
-  }
-  return { kind: "legacy", data: migrateData(value) };
+  if (isStoredAppRecord(value)) return storedVaultState(value.data);
+  throw new Error("本地账本数据格式已过时，请清空后重新创建");
 }
 
 async function loadStringData(value: string): Promise<AppData> {
@@ -161,7 +115,6 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
       createStoreIfMissing(request.result, STORE_NAME);
-      createStoreIfMissing(request.result, BACKUP_STORE_NAME);
     };
   });
 }
@@ -230,43 +183,13 @@ export function isSameAppData(left: AppData, right: AppData): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function writeBackup(db: IDBDatabase, backup: BackupRecord): Promise<void> {
+function removeData(db: IDBDatabase): Promise<void> {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(BACKUP_STORE_NAME, "readwrite");
+    const transaction = db.transaction(STORE_NAME, "readwrite");
     transaction.onerror = () => reject(transaction.error);
     transaction.oncomplete = () => resolve();
-    transaction.objectStore(BACKUP_STORE_NAME).put(backup, backup.id);
+    transaction.objectStore(STORE_NAME).delete(DATA_KEY);
   });
-}
-
-function readBackups(db: IDBDatabase): Promise<readonly BackupRecord[]> {
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(BACKUP_STORE_NAME).objectStore(BACKUP_STORE_NAME).getAll();
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result as readonly BackupRecord[]);
-  });
-}
-
-function readBackup(db: IDBDatabase, id: string): Promise<BackupRecord | undefined> {
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(BACKUP_STORE_NAME).objectStore(BACKUP_STORE_NAME).get(id);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result as BackupRecord | undefined);
-  });
-}
-
-function removeBackup(db: IDBDatabase, id: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(BACKUP_STORE_NAME, "readwrite");
-    transaction.onerror = () => reject(transaction.error);
-    transaction.oncomplete = () => resolve();
-    transaction.objectStore(BACKUP_STORE_NAME).delete(id);
-  });
-}
-
-function requireLegacyBackupData(backup: BackupRecord): AppData {
-  if (backup.data) return backup.data;
-  throw new Error("备份不是有效的 Coinly 数据");
 }
 
 function isStoredAppRecord(value: StoredAppEntry): value is StoredAppRecord {

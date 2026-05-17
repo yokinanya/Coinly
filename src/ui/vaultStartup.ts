@@ -50,7 +50,7 @@ async function loadSubmittedData(options: SubmitVaultOptions): Promise<LoadedDat
 }
 
 async function loadFromSyncSettingsPackage(options: SubmitVaultOptions): Promise<LoadedDataResult> {
-  if (options.state.kind !== "empty") throw new Error("只能在创建账本时快速导入同步配置");
+  if (options.state.kind !== "empty") throw new Error("只能在创建账本时导入同步源配置");
   const preview = await previewSyncSettingsPackage(options.syncSettingsPackage ?? "", options.passphrase);
   const data = await loadDataFromSyncSettings({
     settings: preview.settings,
@@ -95,9 +95,7 @@ async function unlockOrCreateVault(
 }
 
 function vaultPromptText(state: StoredVaultState): string {
-  if (state.kind === "encrypted") return "请先解锁本地账本";
-  if (state.kind === "legacy") return "检测到旧明文账本，请设置口令完成加密迁移";
-  return "请先创建本地账本";
+  return state.kind === "encrypted" ? "请先解锁本地账本" : "请先创建本地账本";
 }
 
 function errorMessage(error: unknown, fallback: string): string {

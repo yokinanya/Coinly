@@ -1,20 +1,11 @@
 import { Plus } from "lucide-react";
 import type { MutableRefObject } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppData, SyncSettings, ThemeMode } from "../domain/types";
 import { saveData, type SaveToken } from "../storage/indexedDb";
 import type { StoredVaultState } from "../storage/indexedDb";
 import { syncData, type SyncResult } from "../sync/syncClient";
-import { AccountsView } from "./AccountsView";
-import { BudgetView } from "./BudgetView";
-import { CategoriesView } from "./CategoriesView";
-import { DashboardView } from "./DashboardView";
-import { EntryDialog } from "./EntryView";
-import { RecurringView } from "./RecurringView";
-import { SettingsView } from "./SettingsView";
-import { StatsView } from "./StatsView";
 import type { StatsFilter } from "./StatsView";
-import { TransactionsView } from "./TransactionsView";
 import { VaultGate } from "./VaultGate";
 import { NavigationSidebar } from "./appNavigation";
 import { replaceUnknownPath, VIEW_PATHS, viewFromPath, type ViewId } from "./appRoutes";
@@ -28,6 +19,15 @@ import { bootstrapVault, submitVault } from "./vaultStartup";
 
 const EMPTY_SYNC_SETTINGS: SyncSettings = { enabled: true, targets: [] };
 const AUTO_SYNC_DELAY_MS = 60_000;
+const AccountsView = lazy(() => import("./AccountsView").then((module) => ({ default: module.AccountsView })));
+const BudgetView = lazy(() => import("./BudgetView").then((module) => ({ default: module.BudgetView })));
+const CategoriesView = lazy(() => import("./CategoriesView").then((module) => ({ default: module.CategoriesView })));
+const DashboardView = lazy(() => import("./DashboardView").then((module) => ({ default: module.DashboardView })));
+const EntryDialog = lazy(() => import("./EntryView").then((module) => ({ default: module.EntryDialog })));
+const RecurringView = lazy(() => import("./RecurringView").then((module) => ({ default: module.RecurringView })));
+const SettingsView = lazy(() => import("./SettingsView").then((module) => ({ default: module.SettingsView })));
+const StatsView = lazy(() => import("./StatsView").then((module) => ({ default: module.StatsView })));
+const TransactionsView = lazy(() => import("./TransactionsView").then((module) => ({ default: module.TransactionsView })));
 
 export function App() {
   const [data, setData] = useState<AppData>();
@@ -35,7 +35,6 @@ export function App() {
   const saveTokenRef = useRef<SaveToken>({ version: 0 });
   const [saveToken, setSaveToken] = useState<SaveToken>({ version: 0 });
   const [viewId, setViewId] = useState<ViewId>(() => viewFromPath(window.location.pathname));
-  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
   const [syncResolution, setSyncResolution] = useState<SyncResolution>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "info", text: "正在加载本地账本" });
@@ -44,6 +43,9 @@ export function App() {
   const updateSaveToken = useCallback((token: SaveToken) => {
     saveTokenRef.current = token;
     setSaveToken(token);
+  }, []);
+  const setVaultData = useCallback((nextData: AppData) => {
+    setData(nextData);
   }, []);
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export function App() {
     applyTheme(data?.uiSettings?.theme ?? "system");
   }, [data?.uiSettings?.theme]);
 
-  const content = useMemo(() => renderView({ viewId, data, token: saveToken, setData, setStatus, setViewId, setMobileMoreOpen }), [viewId, data, saveToken]);
+  const content = useMemo(() => renderView({ viewId, data, token: saveToken, setData, setVaultData, setStatus, setViewId }), [viewId, data, saveToken, setData, setVaultData]);
 
   if (!data) {
     if (storedVault) {
@@ -102,13 +104,15 @@ export function App() {
   }
   return (
     <div className="min-h-[100svh] bg-[var(--color-background)] md:min-h-screen">
-      <NavigationSidebar viewId={viewId} mobileMoreOpen={mobileMoreOpen} setViewId={setViewId} setMobileMoreOpen={setMobileMoreOpen} />
-      <main className="w-full px-4 pb-[calc(var(--mobile-nav-height)+var(--safe-bottom)+1rem)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-[calc(1.25rem+var(--safe-top))] md:ml-60 md:w-[calc(100%-15rem)] md:px-8 md:pb-8 md:pt-[calc(1.25rem+var(--safe-top))]">
+      <NavigationSidebar viewId={viewId} setViewId={setViewId} />
+      <main className="w-full px-4 pb-[calc(var(--safe-bottom)+5.5rem)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-4 md:ml-60 md:w-[calc(100%-15rem)] md:px-8 md:pb-8 md:pt-[calc(1.25rem+var(--safe-top))]">
         {shouldShowStatus(status) && <div className="mb-4"><StatusBar status={status} /></div>}
-        <PageTransition key={viewId}>{content}</PageTransition>
+        <Suspense fallback={<StatusBar status={{ tone: "info", text: "正在加载页面" }} />}>
+          <PageTransition key={viewId}>{content}</PageTransition>
+        </Suspense>
       </main>
       <button
-        className="fixed bottom-[calc(var(--mobile-nav-height)+var(--safe-bottom)+1rem)] right-[max(1rem,var(--safe-right))] z-30 grid h-14 w-14 place-items-center rounded-full bg-[var(--color-accent)] text-white shadow-lg transition hover:bg-[var(--color-accent-hover)] md:bottom-6"
+        className="fixed bottom-[calc(var(--safe-bottom)+1rem)] right-[max(1rem,var(--safe-right))] z-30 grid h-14 w-14 place-items-center rounded-full bg-[var(--color-accent)] text-white shadow-lg transition hover:bg-[var(--color-accent-hover)] md:bottom-6"
         type="button"
         aria-label="记账"
         title="记账"
@@ -116,12 +120,16 @@ export function App() {
       >
         <Plus size={24} />
       </button>
-      <EntryDialog open={entryOpen} data={data} setData={setData} setStatus={setStatus} onClose={() => setEntryOpen(false)} />
+      {entryOpen && (
+        <Suspense fallback={null}>
+          <EntryDialog open={entryOpen} data={data} setData={setVaultData} setStatus={setStatus} onClose={() => setEntryOpen(false)} />
+        </Suspense>
+      )}
       <SyncResolutionPanel
         resolution={syncResolution}
         data={data}
         settings={data.syncSettings ?? EMPTY_SYNC_SETTINGS}
-        applyRemote={setData}
+        applyRemote={setVaultData}
         clear={() => setSyncResolution(undefined)}
         setMessage={showAppMessage}
       />
@@ -170,7 +178,7 @@ function handleAutoSyncResult(
 ): void {
   if (result.status === "remote-newer" && result.remoteData) {
     options.setData(result.remoteData);
-    options.setMessage("已使用较新的远端账本覆盖本地");
+    options.setMessage("已用较新的云端账本更新本地账本");
     return;
   }
   if (isResolutionResult(result)) {
@@ -182,29 +190,28 @@ function renderView(options: {
   readonly viewId: ViewId;
   readonly data: AppData | undefined;
   readonly token: SaveToken;
-  readonly setData: (data: AppData) => void;
+  readonly setData: (data: AppData | undefined) => void;
+  readonly setVaultData: (data: AppData) => void;
   readonly setStatus: (status: StatusMessage) => void;
   readonly setViewId: (id: ViewId) => void;
-  readonly setMobileMoreOpen: (open: boolean) => void;
 }) {
   if (!options.data) {
     return null;
   }
-  const props = { data: options.data, setData: options.setData };
+  const props = { data: options.data, setData: options.setVaultData };
   if (options.viewId === "transactions") return <TransactionsView {...props} />;
   if (options.viewId === "accounts") return <AccountsView {...props} />;
   if (options.viewId === "budget") return <BudgetView {...props} />;
-  if (options.viewId === "stats") return <StatsView data={options.data} onFilter={(filter) => navigateToTransactions(filter, options.setViewId, options.setMobileMoreOpen)} />;
+  if (options.viewId === "stats") return <StatsView data={options.data} onFilter={(filter) => navigateToTransactions(filter, options.setViewId)} />;
   if (options.viewId === "categories") return <CategoriesView {...props} />;
   if (options.viewId === "recurring") return <RecurringView {...props} />;
-  if (options.viewId === "settings") return <SettingsView {...props} token={options.token} />;
+  if (options.viewId === "settings") return <SettingsView data={options.data} token={options.token} setData={options.setData} setVaultData={options.setVaultData} />;
   return <DashboardView {...props} />;
 }
 
 function navigateToTransactions(
   filter: StatsFilter,
   setViewId: (id: ViewId) => void,
-  setMobileMoreOpen: (open: boolean) => void,
 ): void {
   const params = new URLSearchParams();
   if (filter.categoryId) params.set("categoryId", filter.categoryId);
@@ -212,7 +219,6 @@ function navigateToTransactions(
   if (filter.currency) params.set("currency", filter.currency);
   window.history.pushState(null, "", `${VIEW_PATHS.transactions}?${params.toString()}`);
   setViewId("transactions");
-  setMobileMoreOpen(false);
 }
 
 function applyTheme(theme: ThemeMode) {

@@ -1,20 +1,21 @@
-import { Link2, LogOut, RefreshCw, Settings2, Trash2, Wifi } from "lucide-react";
+import { Link2, LogOut, RefreshCw, Search, Settings2, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { AppData, SyncTarget } from "../domain/types";
 import {
   authorizeSyncTarget,
+  deleteSyncTarget,
   disconnectSyncTarget,
-  syncAutoTarget,
   syncSingleTarget,
   targetDisplayName,
   testSyncTarget,
   type SyncResult,
 } from "../sync/syncClient";
-import { Button, List, Modal, Switch } from "./metis";
+import { Button, Modal, Popconfirm } from "./metis";
 import { SyncTargetForm } from "./syncTargetForm";
 import { providerLabel, targetIdentity, upsertSyncTarget } from "./syncTargetHelpers";
+import { Switch } from "./metis";
 
-type ProviderAction = "authorizing" | "disconnecting" | "testing" | "syncing";
+type ProviderAction = "authorizing" | "disconnecting" | "testing" | "syncing" | "deleting";
 
 export function ProviderList(props: {
   readonly targets: readonly SyncTarget[];
@@ -24,23 +25,20 @@ export function ProviderList(props: {
   readonly setMessage: (value: string) => void;
 }) {
   if (props.targets.length === 0) {
-    return <p className="text-sm text-[var(--color-text-secondary)]">暂无同步提供方。</p>;
+    return <p className="text-sm text-[var(--color-text-secondary)]">暂无同步源。</p>;
   }
-  return (
-    <List
-      bordered
-      className="w-full"
-      dataSource={[...props.targets]}
-      rowKey={targetIdentity}
-      renderItem={(target, index) => <ProviderItem target={target} index={index} {...props} />}
-    />
-  );
+  return <div className="w-full space-y-3">{props.targets.map((target, index) => <ProviderItem key={targetIdentity(target)} target={target} index={index} {...props} />)}</div>;
 }
 
 export function TargetModal(props: {
   readonly target?: SyncTarget;
   readonly clear: () => void;
   readonly save: (target: SyncTarget) => void;
+  readonly data: AppData;
+  readonly targets: readonly SyncTarget[];
+  readonly setTargets: (targets: readonly SyncTarget[]) => void;
+  readonly onSyncResult: (result: SyncResult, target?: SyncTarget) => void;
+  readonly setMessage: (value: string) => void;
 }) {
   const [draft, setDraft] = useState<SyncTarget>();
   const target = draft ?? props.target;
@@ -52,9 +50,29 @@ export function TargetModal(props: {
     ? <div className="flex justify-end gap-2"><Button onClick={close}>取消</Button><Button variant="primary" onClick={() => saveTarget(target, props.save, close)}>保存</Button></div>
     : undefined;
   return (
-    <Modal centered open={Boolean(props.target)} title="同步提供方配置" width="min(920px, calc(100vw - 2rem))" footer={footer} onCancel={close}>
+    <Modal centered open={Boolean(props.target)} title="同步源配置" width="min(920px, calc(100vw - 2rem))" footer={footer} onCancel={close}>
       <div className="max-h-[min(72vh,42rem)] overflow-y-auto px-6 py-2 sm:px-8">
-        {target && <SyncTargetForm target={target} onChange={setDraft} />}
+        {target && (
+          <div className="space-y-4">
+            <SyncTargetForm target={target} onChange={setDraft} />
+            <ProviderAuthActions
+              target={target}
+              targets={props.targets}
+              data={props.data}
+              setTargets={props.setTargets}
+              onSyncResult={props.onSyncResult}
+              setMessage={props.setMessage}
+            />
+            <ProviderSyncActions
+              target={target}
+              targets={props.targets}
+              data={props.data}
+              setTargets={props.setTargets}
+              onSyncResult={props.onSyncResult}
+              setMessage={props.setMessage}
+            />
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -70,20 +88,48 @@ function ProviderItem(props: {
   readonly setMessage: (value: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [deleteProviderOpen, setDeleteProviderOpen] = useState(false);
   return (
-    <List.Item>
-      <div className="flex w-full flex-wrap items-center justify-between gap-3">
+    <div className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
         <ProviderMeta target={props.target} index={props.index} />
-        <ProviderActions {...props} edit={() => setEditing(true)} />
+        <ProviderActions
+          {...props}
+          edit={() => setEditing(true)}
+          deleteProvider={() => setDeleteProviderOpen(true)}
+          toggleEnabled={() => props.setTargets(toggleTargetEnabled(props.targets, props.target))}
+        />
       </div>
-      <TargetModal target={editing ? props.target : undefined} clear={() => setEditing(false)} save={(target) => props.setTargets(upsertSyncTarget(props.targets, target))} />
-    </List.Item>
+      <TargetModal
+        target={editing ? props.target : undefined}
+        clear={() => setEditing(false)}
+        save={(target) => props.setTargets(upsertSyncTarget(props.targets, target))}
+        data={props.data}
+        targets={props.targets}
+        setTargets={props.setTargets}
+        onSyncResult={props.onSyncResult}
+        setMessage={props.setMessage}
+      />
+      <Popconfirm
+        open={deleteProviderOpen}
+        title={`确认删除“${targetDisplayName(props.target, props.index)}”？`}
+        description="只删除本地配置，不删除云端文件。"
+        cancelText="取消"
+        okText="删除"
+        okType="primary"
+        onCancel={() => setDeleteProviderOpen(false)}
+        onConfirm={() => {
+          props.setTargets(props.targets.filter((target) => targetIdentity(target) !== targetIdentity(props.target)));
+          setDeleteProviderOpen(false);
+        }}
+      />
+    </div>
   );
 }
 
 function ProviderMeta(props: { readonly target: SyncTarget; readonly index: number }) {
   return (
-    <span>
+    <span className="min-w-0">
       <span className="block text-sm font-medium text-[var(--color-text)]">{targetDisplayName(props.target, props.index)}</span>
       <span className="text-xs text-[var(--color-text-secondary)]">
         {providerMetaText(props.target)}
@@ -108,24 +154,73 @@ function ProviderActions(props: {
   readonly onSyncResult: (result: SyncResult, target?: SyncTarget) => void;
   readonly setMessage: (value: string) => void;
   readonly edit: () => void;
+  readonly deleteProvider: () => void;
+  readonly toggleEnabled: () => void;
 }) {
   const [busy, setBusy] = useState<ProviderAction>();
-  const cloudTarget = props.target.provider === "onedrive" || props.target.provider === "google-drive";
-  const connected = isConnectedCloudTarget(props.target);
   const disabled = Boolean(busy);
   return (
-    <span className="flex flex-wrap items-center gap-2">
-      <label className="flex min-h-8 items-center gap-2 text-sm">
-        <Switch disabled={disabled} checked={props.target.enabled} onChange={() => toggleTarget({ ...props, setBusy })} />
-        {props.target.enabled ? "自动同步已启用" : "自动同步已停用"}
+    <span className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:shrink-0 sm:flex-nowrap">
+      <label className="mr-auto flex items-center gap-2 text-xs text-[var(--color-text-secondary)] sm:mr-0">
+        <Switch checked={props.target.enabled} onChange={props.toggleEnabled} disabled={disabled} />
+        自动同步
       </label>
       <Button aria-label="配置" title="配置" disabled={disabled} onClick={props.edit}><Settings2 size={16} /></Button>
-      {cloudTarget && !connected && <Button aria-label="授权" title="授权" disabled={disabled} loading={busy === "authorizing"} onClick={() => authorizeTarget({ ...props, setBusy })}><Link2 size={16} /></Button>}
-      {cloudTarget && connected && <Button aria-label="断开连接" title="断开连接" disabled={disabled} loading={busy === "disconnecting"} onClick={() => disconnectTarget({ ...props, setBusy })}><LogOut size={16} /></Button>}
-      <Button aria-label="测试连接" title="测试连接" disabled={disabled} loading={busy === "testing"} onClick={() => testTarget({ ...props, setBusy })}><Wifi size={16} /></Button>
       <Button aria-label="手动同步" title="手动同步" disabled={disabled} loading={busy === "syncing"} onClick={() => syncTarget({ ...props, setBusy })}><RefreshCw size={16} /></Button>
-      <Button aria-label="删除" title="删除" variant="danger" disabled={disabled} onClick={() => removeTarget(props)}><Trash2 size={16} /></Button>
+      <Button aria-label="删除" title="删除" variant="danger" disabled={disabled} onClick={props.deleteProvider}><Trash2 size={16} /></Button>
     </span>
+  );
+}
+
+function ProviderAuthActions(props: {
+  readonly target: SyncTarget;
+  readonly targets: readonly SyncTarget[];
+  readonly data: AppData;
+  readonly setTargets: (targets: readonly SyncTarget[]) => void;
+  readonly onSyncResult: (result: SyncResult, target?: SyncTarget) => void;
+  readonly setMessage: (value: string) => void;
+}) {
+  const [busy, setBusy] = useState<ProviderAction>();
+  if (!isConnectedCloudTarget(props.target) && !isCloudTarget(props.target)) return null;
+  const disabled = Boolean(busy);
+  return (
+    <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+      <span className="text-sm text-[var(--color-text-secondary)]">云盘账号</span>
+      {!isConnectedCloudTarget(props.target) && <Button aria-label="登录" title="登录" disabled={disabled} loading={busy === "authorizing"} onClick={() => authorizeTarget({ ...props, setBusy })}><Link2 size={16} />登录</Button>}
+      {isConnectedCloudTarget(props.target) && <Button aria-label="断开登录" title="断开登录" disabled={disabled} loading={busy === "disconnecting"} onClick={() => disconnectTarget({ ...props, setBusy })}><LogOut size={16} />断开</Button>}
+    </div>
+  );
+}
+
+function ProviderSyncActions(props: {
+  readonly target: SyncTarget;
+  readonly targets: readonly SyncTarget[];
+  readonly data: AppData;
+  readonly setTargets: (targets: readonly SyncTarget[]) => void;
+  readonly onSyncResult: (result: SyncResult, target?: SyncTarget) => void;
+  readonly setMessage: (value: string) => void;
+}) {
+  const [busy, setBusy] = useState<ProviderAction>();
+  const disabled = Boolean(busy);
+  return (
+    <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+      <span className="text-sm text-[var(--color-text-secondary)]">同步文件</span>
+      <Button aria-label="测试连接" title="测试连接" disabled={disabled} loading={busy === "testing"} onClick={() => testTarget({ ...props, setBusy })}>
+        <Search size={16} />测试
+      </Button>
+      <Popconfirm
+        title="删除云端数据"
+        description="确认删除该同步源中的 Coinly 加密包？本地账本不会被删除。"
+        cancelText="取消"
+        okText="删除"
+        okType="primary"
+        onConfirm={() => deleteRemoteTarget({ ...props, setBusy })}
+      >
+        <Button aria-label="删除云端数据" title="删除云端数据" disabled={disabled} loading={busy === "deleting"} variant="danger">
+          <Trash2 size={16} />删除
+        </Button>
+      </Popconfirm>
+    </div>
   );
 }
 
@@ -178,13 +273,16 @@ function syncTarget(props: ProviderActionProps): void {
   });
 }
 
-function syncAutoEnabledTarget(props: ProviderActionProps): void {
+function deleteRemoteTarget(props: ProviderActionProps): void {
   runProviderTask({
-    action: "syncing",
-    fallback: "自动同步失败",
+    action: "deleting",
+    fallback: "删除云端数据失败",
     setBusy: props.setBusy,
     setMessage: props.setMessage,
-    task: async () => props.onSyncResult(await syncAutoTarget(props.data, props.target), props.target),
+    task: async () => {
+      await deleteSyncTarget(props.target);
+      props.setMessage("已删除云端数据");
+    },
   });
 }
 
@@ -201,26 +299,14 @@ function runProviderTask(options: {
     .finally(() => options.setBusy(undefined));
 }
 
-function toggleTarget(props: {
-  readonly target: SyncTarget;
-  readonly targets: readonly SyncTarget[];
-  readonly data: AppData;
-  readonly setTargets: (targets: readonly SyncTarget[]) => void;
-  readonly onSyncResult: (result: SyncResult, target?: SyncTarget) => void;
-  readonly setMessage: (value: string) => void;
-  readonly setBusy: (action?: ProviderAction) => void;
-}): void {
-  const target = { ...props.target, enabled: !props.target.enabled };
-  props.setTargets(upsertSyncTarget(props.targets, target));
-  if (target.enabled) syncAutoEnabledTarget({ ...props, target });
+function isConnectedCloudTarget(target: SyncTarget): boolean {
+  if (target.provider === "onedrive") return Boolean(target.accountId || target.accessToken || target.username);
+  if (target.provider === "google-drive") return Boolean(target.accessToken);
+  return false;
 }
 
-function removeTarget(props: {
-  readonly target: SyncTarget;
-  readonly targets: readonly SyncTarget[];
-  readonly setTargets: (targets: readonly SyncTarget[]) => void;
-}): void {
-  props.setTargets(props.targets.filter((target) => targetIdentity(target) !== targetIdentity(props.target)));
+function isCloudTarget(target: SyncTarget): boolean {
+  return target.provider === "onedrive" || target.provider === "google-drive";
 }
 
 function saveTarget(target: SyncTarget, save: (target: SyncTarget) => void, close: () => void): void {
@@ -228,10 +314,8 @@ function saveTarget(target: SyncTarget, save: (target: SyncTarget) => void, clos
   close();
 }
 
-function isConnectedCloudTarget(target: SyncTarget): boolean {
-  if (target.provider === "onedrive") return Boolean(target.accountId || target.accessToken || target.username);
-  if (target.provider === "google-drive") return Boolean(target.accessToken);
-  return false;
+function toggleTargetEnabled(targets: readonly SyncTarget[], target: SyncTarget): readonly SyncTarget[] {
+  return targets.map((item) => (targetIdentity(item) === targetIdentity(target) ? { ...item, enabled: !item.enabled } : item));
 }
 
 function errorMessage(error: unknown, fallback: string): string {

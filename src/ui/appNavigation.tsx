@@ -1,7 +1,11 @@
-import { BarChart3, CalendarClock, Home, List, Menu, PieChart, Settings, Tags, Wallet } from "lucide-react";
+import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, PieChart, Settings, Tags, Wallet, X } from "lucide-react";
+import type { Key } from "react";
+import { useMemo, useState } from "react";
 import { pushViewPath, type ViewId } from "./appRoutes";
+import { Drawer, Layout, Menu } from "./metis";
 
-type MobileNavId = ViewId | "more";
+const SIDEBAR_WIDTH = 240;
+const DRAWER_WIDTH = 280;
 
 const NAV_ITEMS = [
   { id: "home", label: "首页", icon: Home },
@@ -14,100 +18,102 @@ const NAV_ITEMS = [
   { id: "settings", label: "设置", icon: Settings },
 ] as const;
 
-const MOBILE_PRIMARY_IDS: readonly ViewId[] = ["home", "transactions", "accounts", "budget"];
-const MOBILE_MORE_IDS: readonly ViewId[] = ["stats", "categories", "recurring", "settings"];
-
 export function NavigationSidebar(props: {
   readonly viewId: ViewId;
-  readonly mobileMoreOpen: boolean;
   readonly setViewId: (id: ViewId) => void;
-  readonly setMobileMoreOpen: (open: boolean) => void;
 }) {
-  const select = (id: ViewId) => selectView(id, props.setViewId, props.setMobileMoreOpen);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const items = useNavigationItems();
+  const select = (id: ViewId) => {
+    selectView(id, props.setViewId);
+    setMobileOpen(false);
+  };
   return (
-    <aside className="fixed inset-x-0 bottom-0 z-20 border-t border-[var(--color-border)] bg-[var(--color-surface)] pb-[var(--safe-bottom)] pl-[var(--safe-left)] pr-[var(--safe-right)] md:inset-y-0 md:left-0 md:right-auto md:w-60 md:border-r md:border-t-0 md:p-0">
-      <div className="hidden px-5 pb-6 pt-[calc(1.5rem+var(--safe-top))] md:block">
-        <h1 className="text-2xl font-semibold text-[var(--color-text)]">Coinly</h1>
-      </div>
-      {props.mobileMoreOpen && <MorePanel viewId={props.viewId} onSelect={select} />}
-      <nav className="grid grid-cols-5 gap-1 p-2 md:block">
-        {mobileNavItems().map((item) => (
-          <NavButton key={item.id} item={item} active={isNavActive(item.id, props.viewId)} onSelect={(id) => selectMobileNav(id, props.setViewId, props.setMobileMoreOpen)} />
-        ))}
-        {NAV_ITEMS.map((item) => <DesktopNavButton key={item.id} item={item} active={props.viewId === item.id} onSelect={select} />)}
-      </nav>
-    </aside>
+    <>
+      <MobileHeader openMenu={() => setMobileOpen(true)} />
+      <Layout.Sider className="fixed inset-y-0 left-0 z-20 hidden border-r border-[var(--color-border)] bg-[var(--color-surface)] md:block" width={SIDEBAR_WIDTH}>
+        <SidebarContent items={items} viewId={props.viewId} onSelect={select} />
+      </Layout.Sider>
+      <Drawer
+        className={{ body: "p-0", content: "bg-[var(--color-surface)]" }}
+        closable={false}
+        open={mobileOpen}
+        title={null}
+        width={DRAWER_WIDTH}
+        placement="left"
+        onClose={() => setMobileOpen(false)}
+      >
+        <SidebarContent items={items} viewId={props.viewId} onSelect={select} compact onClose={() => setMobileOpen(false)} />
+      </Drawer>
+    </>
   );
 }
 
-function NavButton(props: {
-  readonly item: { readonly id: MobileNavId; readonly label: string; readonly icon: typeof Home };
-  readonly active: boolean;
-  readonly onSelect: (id: MobileNavId) => void;
-}) {
-  const Icon = props.item.icon;
-  const activeClass = props.active ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]" : "text-[var(--color-text-secondary)]";
+function MobileHeader(props: { readonly openMenu: () => void }) {
   return (
-    <button className={`flex min-h-14 w-full flex-col items-center gap-1 rounded-md p-2 text-xs font-medium md:hidden ${activeClass}`} onClick={() => props.onSelect(props.item.id)}>
-      <Icon size={18} />
-      <span>{props.item.label}</span>
-    </button>
+    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-[var(--safe-top)] md:hidden">
+      <h1 className="text-lg font-semibold leading-none text-[var(--color-text)]">Coinly</h1>
+      <button
+        className="grid h-10 w-10 place-items-center rounded-md text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-muted)]"
+        type="button"
+        aria-label="打开导航"
+        title="打开导航"
+        onClick={props.openMenu}
+      >
+        <MenuIcon size={22} />
+      </button>
+    </header>
   );
 }
 
-function DesktopNavButton(props: {
-  readonly item: (typeof NAV_ITEMS)[number];
-  readonly active: boolean;
+function SidebarContent(props: {
+  readonly items: ReturnType<typeof useNavigationItems>;
+  readonly viewId: ViewId;
   readonly onSelect: (id: ViewId) => void;
+  readonly compact?: boolean;
+  readonly onClose?: () => void;
 }) {
-  const Icon = props.item.icon;
-  const activeClass = props.active ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)]";
+  const paddingClass = props.compact ? "px-3 pb-4 pt-[calc(1rem+var(--safe-top))]" : "px-3 pb-4 pt-[calc(1.5rem+var(--safe-top))]";
   return (
-    <button className={`hidden min-h-10 w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium md:flex ${activeClass}`} onClick={() => props.onSelect(props.item.id)}>
-      <Icon size={18} />
-      <span>{props.item.label}</span>
-    </button>
-  );
-}
-
-function MorePanel(props: { readonly viewId: ViewId; readonly onSelect: (id: ViewId) => void }) {
-  return (
-    <div className="border-t border-[var(--color-border)] p-2 md:hidden">
-      <div className="grid grid-cols-2 gap-2">
-        {NAV_ITEMS.filter((item) => MOBILE_MORE_IDS.includes(item.id)).map((item) => (
-          <button key={item.id} className={`min-h-10 rounded-md px-3 text-sm font-medium ${isNavActive(item.id, props.viewId) ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]" : "text-[var(--color-text-secondary)]"}`} onClick={() => props.onSelect(item.id)}>
-            {item.label}
+    <div className={`flex h-full min-h-0 flex-col bg-[var(--color-surface)] ${paddingClass}`}>
+      <div className="flex min-h-12 items-center justify-between px-2 pb-4">
+        <h1 className={`${props.compact ? "text-lg" : "text-2xl"} font-semibold text-[var(--color-text)]`}>Coinly</h1>
+        {props.compact && (
+          <button
+            className="grid h-9 w-9 place-items-center rounded-md text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-muted)]"
+            type="button"
+            aria-label="关闭导航"
+            title="关闭导航"
+            onClick={props.onClose}
+          >
+            <X size={20} />
           </button>
-        ))}
+        )}
       </div>
+      <Menu
+        className={{ root: "border-none bg-transparent" }}
+        items={props.items}
+        mode="inline"
+        selectedKeys={[props.viewId]}
+        onClick={(event: { readonly key: Key }) => props.onSelect(event.key as ViewId)}
+      />
     </div>
   );
 }
 
-function mobileNavItems() {
-  const primary = NAV_ITEMS.filter((item) => MOBILE_PRIMARY_IDS.includes(item.id));
-  return [...primary, { id: "more" as const, label: "更多", icon: Menu }];
+function useNavigationItems() {
+  return useMemo(
+    () =>
+      NAV_ITEMS.map((item) => ({
+        key: item.id,
+        icon: <item.icon size={18} />,
+        label: item.label,
+      })),
+    [],
+  );
 }
 
-function selectMobileNav(
-  id: MobileNavId,
-  setViewId: (id: ViewId) => void,
-  setMobileMoreOpen: (open: boolean) => void,
-) {
-  if (id === "more") {
-    setMobileMoreOpen(true);
-    return;
-  }
-  selectView(id, setViewId, setMobileMoreOpen);
-}
-
-function selectView(id: ViewId, setViewId: (id: ViewId) => void, setMobileMoreOpen: (open: boolean) => void) {
+function selectView(id: ViewId, setViewId: (id: ViewId) => void) {
   pushViewPath(id);
   setViewId(id);
-  setMobileMoreOpen(false);
-}
-
-function isNavActive(id: MobileNavId, viewId: ViewId): boolean {
-  if (id === "more") return MOBILE_MORE_IDS.includes(viewId);
-  return id === viewId;
 }

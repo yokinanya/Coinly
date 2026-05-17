@@ -1,8 +1,9 @@
-import { Lock, ShieldCheck, Upload as UploadIcon, X } from "lucide-react";
-import { useState } from "react";
+import { Camera, ImageUp, Lock, ShieldCheck, Upload as UploadIcon, X } from "lucide-react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { StoredVaultState } from "../storage/indexedDb";
 import type { StatusMessage } from "./common";
-import { Button, Input, Switch, Upload } from "./metis";
+import { Button, Input, Modal, Switch, Upload } from "./metis";
+import { createQrDetector, decodeQrImage, firstQrValue, hasQrScannerSupport } from "./qrScanner";
 
 export interface VaultGateSubmitOptions {
   readonly passphrase: string;
@@ -25,6 +26,7 @@ export function VaultGate(props: {
   const [rememberDevice, setRememberDevice] = useState(true);
   const [syncSettingsFile, setSyncSettingsFile] = useState<SyncSettingsFile>();
   const [fileError, setFileError] = useState("");
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const mode = gateMode(props.state);
   const submit = () => {
@@ -46,8 +48,10 @@ export function VaultGate(props: {
             <SyncSettingsImportPicker
               file={syncSettingsFile}
               fileError={fileError}
+              openQrScanner={() => setQrScannerOpen(true)}
               clear={() => clearSyncSettingsFile(setSyncSettingsFile, setFileError)}
               select={(file) => selectSyncSettingsFile(file, setSyncSettingsFile, setFileError)}
+              selectQrImage={(file) => selectSyncSettingsQrImage(file, setSyncSettingsFile, setFileError)}
             />
           )}
           <RememberPassphrase checked={rememberDevice} onChange={setRememberDevice} />
@@ -55,6 +59,14 @@ export function VaultGate(props: {
             {submitLabel(mode, syncSettingsFile)}
           </Button>
         </div>
+        {mode === "create" && (
+          <SyncSettingsQrScanner
+            open={qrScannerOpen}
+            close={() => setQrScannerOpen(false)}
+            apply={(content) => applySyncSettingsQr(content, setSyncSettingsFile, setFileError, setQrScannerOpen)}
+            setError={setFileError}
+          />
+        )}
       </section>
     </main>
   );
@@ -89,17 +101,45 @@ function PasswordField(props: {
 function SyncSettingsImportPicker(props: {
   readonly file?: SyncSettingsFile;
   readonly fileError: string;
+  readonly openQrScanner: () => void;
   readonly clear: () => void;
   readonly select: (file: File) => string;
+  readonly selectQrImage: (file: File) => string;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
       <Upload accept="application/json" beforeUpload={props.select} maxCount={1} showUploadList={false}>
-        <Button icon={<UploadIcon size={16} />}>快速导入同步配置</Button>
+        <Button aria-label="导入同步源配置" title="导入同步源配置"><UploadIcon size={16} /></Button>
+      </Upload>
+      <Button aria-label="扫描二维码" title="扫描二维码" onClick={props.openQrScanner}><Camera size={16} /></Button>
+      <Upload accept="image/*" beforeUpload={props.selectQrImage} maxCount={1} showUploadList={false}>
+        <Button aria-label="导入二维码图片" title="导入二维码图片"><ImageUp size={16} /></Button>
       </Upload>
       {props.file && <SelectedSyncSettingsFile file={props.file} clear={props.clear} />}
       {props.fileError && <span className="text-sm text-red-600">{props.fileError}</span>}
     </div>
+  );
+}
+
+function SyncSettingsQrScanner(props: {
+  readonly open: boolean;
+  readonly close: () => void;
+  readonly apply: (content: string) => void;
+  readonly setError: (value: string) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (!props.open) return undefined;
+    return startQrCamera(videoRef, props.apply, props.setError);
+  }, [props.open, props.apply, props.setError]);
+  return (
+    <Modal centered open={props.open} title="扫描同步源二维码" footer={<Button onClick={props.close}>关闭</Button>} onCancel={props.close}>
+      <div className="space-y-3">
+        {hasQrScannerSupport()
+          ? <video ref={videoRef} className="aspect-square w-full rounded-lg bg-black object-cover" muted playsInline />
+          : <p className="text-sm text-[var(--color-text-secondary)]">当前浏览器不支持摄像头二维码识别，请使用“导入二维码图片”。</p>}
+      </div>
+    </Modal>
   );
 }
 
@@ -110,7 +150,7 @@ function RememberPassphrase(props: {
   return (
     <label className="flex min-h-10 items-center gap-2 text-sm">
       <Switch checked={props.checked} onChange={props.onChange} />
-      记住口令
+      记住本设备
     </label>
   );
 }
@@ -141,6 +181,94 @@ function selectSyncSettingsFile(
   return Upload.LIST_IGNORE;
 }
 
+function selectSyncSettingsQrImage(
+  file: File,
+  setFile: (value: SyncSettingsFile) => void,
+  setFileError: (value: string) => void,
+): string {
+  setFile({ name: file.name, loading: true });
+  decodeQrImage(file)
+    .then((content) => setFile({ name: "二维码同步配置", content, loading: false }))
+    .then(() => setFileError(""))
+    .catch((error: unknown) => setFileError(error instanceof Error ? error.message : "读取二维码失败"));
+  return Upload.LIST_IGNORE;
+}
+
+function applySyncSettingsQr(
+  content: string,
+  setFile: (value: SyncSettingsFile) => void,
+  setFileError: (value: string) => void,
+  setQrScannerOpen: (value: boolean) => void,
+): void {
+  setFile({ name: "二维码同步配置", content, loading: false });
+  setFileError("");
+  setQrScannerOpen(false);
+}
+
+function startQrCamera(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  apply: (content: string) => void,
+  setError: (value: string) => void,
+): () => void {
+  const controller = new AbortController();
+  openQrCamera(videoRef, apply, setError, controller.signal);
+  return () => controller.abort();
+}
+
+async function openQrCamera(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  apply: (content: string) => void,
+  setError: (value: string) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+    await scanQrStream(videoRef, stream, apply, signal);
+  } catch (error) {
+    setError(error instanceof Error ? error.message : "无法打开摄像头");
+  }
+}
+
+async function scanQrStream(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  stream: MediaStream,
+  apply: (content: string) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const video = requireVideo(videoRef);
+  video.srcObject = stream;
+  await video.play();
+  const detector = createQrDetector();
+  await scanQrFrames(video, detector, apply, signal);
+  stopStream(stream);
+}
+
+async function scanQrFrames(
+  video: HTMLVideoElement,
+  detector: ReturnType<typeof createQrDetector>,
+  apply: (content: string) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  while (!signal.aborted) {
+    const values = await detector.detect(video);
+    if (values.length > 0) return apply(firstQrValue(values));
+    await delay(250);
+  }
+}
+
+function requireVideo(videoRef: RefObject<HTMLVideoElement | null>): HTMLVideoElement {
+  if (!videoRef.current) throw new Error("摄像头画面未就绪");
+  return videoRef.current;
+}
+
+function stopStream(stream: MediaStream): void {
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 function clearSyncSettingsFile(
   setFile: (value: SyncSettingsFile | undefined) => void,
   setFileError: (value: string) => void,
@@ -152,25 +280,17 @@ function clearSyncSettingsFile(
 type VaultMode = "unlock" | "create" | "migrate";
 
 function gateMode(state: StoredVaultState): VaultMode {
-  if (state.kind === "encrypted") return "unlock";
-  if (state.kind === "legacy") return "migrate";
-  return "create";
+  return state.kind === "encrypted" ? "unlock" : "create";
 }
 
 function modeTitle(mode: VaultMode): string {
-  if (mode === "unlock") return "解锁 Coinly";
-  if (mode === "migrate") return "加密旧账本";
-  return "创建账本";
+  return mode === "unlock" ? "解锁 Coinly" : "创建账本";
 }
 
 function modeDescription(mode: VaultMode): string {
-  if (mode === "unlock") return "输入口令后才会加载本地账本。";
-  if (mode === "migrate") return "设置口令后会把旧明文账本迁移为加密包。";
-  return "首次使用需要先设置本地账本口令。";
+  return mode === "unlock" ? "输入口令以加载本地账本。" : "先设置本地账本口令。";
 }
 
 function submitLabel(mode: VaultMode, syncSettingsFile?: SyncSettingsFile): string {
-  if (mode === "unlock") return "解锁账本";
-  if (mode === "migrate") return "加密旧账本";
-  return syncSettingsFile?.content ? "导入并创建账本" : "创建账本";
+  return mode === "unlock" ? "解锁账本" : syncSettingsFile?.content ? "导入同步源并创建账本" : "创建账本";
 }

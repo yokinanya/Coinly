@@ -60,7 +60,7 @@ function hasLatestConflict(snapshot: RemoteSnapshot, latest: RemoteSnapshot): bo
 function requireImportSyncSettings(settings: SyncSettings): SyncSettings {
   const normalized = normalizeSyncSettings(settings);
   if (!normalized?.targets || normalized.targets.length === 0) {
-    throw new Error("同步配置未包含同步提供方");
+    throw new Error("同步配置未包含同步源");
   }
   return { ...normalized, targets: normalized.targets.map((target) => ({ ...target, enabled: true })) };
 }

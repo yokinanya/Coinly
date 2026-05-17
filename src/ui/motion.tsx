@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode, Ref } from "react";
 import { Transition } from "./metis";
 
 const MOTION_DEADLINE = 240;
@@ -12,7 +12,7 @@ const PAGE_TO = { opacity: 1, transform: "translateY(0)" };
 export function FadeIn(props: { readonly children: ReactNode }) {
   return (
     <Transition visible appear deadline={MOTION_DEADLINE} enter={FADE_ENTER} enterFrom={FADE_FROM} enterTo={FADE_TO}>
-      {(motionProps, ref) => <div ref={ref} style={motionProps.style}>{props.children}</div>}
+      {(motionProps: MotionProps, ref: Ref<HTMLDivElement>) => <div ref={ref} className="w-full min-w-0" style={motionProps.style}>{props.children}</div>}
     </Transition>
   );
 }
@@ -20,7 +20,11 @@ export function FadeIn(props: { readonly children: ReactNode }) {
 export function PageTransition(props: { readonly children: ReactNode }) {
   return (
     <Transition visible appear deadline={MOTION_DEADLINE} enter={PAGE_ENTER} enterFrom={PAGE_FROM} enterTo={PAGE_TO}>
-      {(motionProps, ref) => <div ref={ref} style={motionProps.style}>{props.children}</div>}
+      {(motionProps: MotionProps, ref: Ref<HTMLDivElement>) => <div ref={ref} className="w-full min-w-0" style={motionProps.style}>{props.children}</div>}
     </Transition>
   );
+}
+
+interface MotionProps {
+  readonly style?: CSSProperties;
 }

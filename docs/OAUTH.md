@@ -10,7 +10,7 @@ Coinly 的 OneDrive 和 Google Drive 同步运行在浏览器中，属于纯前�
 VITE_ONEDRIVE_CLIENT_ID=你的 Microsoft Application Client ID
 VITE_ONEDRIVE_TENANT_ID=common
 VITE_GOOGLE_DRIVE_CLIENT_ID=你的 Google OAuth Client ID
-VITE_WEIYUN_PROXY_URL=你的腾讯微云代理 Worker 地址
+VITE_WEBDAV_PROXY_URL=你的 WebDAV 代理 Worker 地址
 ```
 
 `.env.local` 已被 `.gitignore` 忽略，不要提交到 GitHub。修改环境变量后需要重启 Vite 开发服务。
@@ -164,22 +164,33 @@ https://你的线上域名
 
 Google Drive token flow 当前只保存短期 access token 和授权账户邮箱。token 过期后，Coinly 会要求重新授权，不做静默后台刷新。
 
-## 腾讯微云
+## WebDAV
 
-腾讯微云同步需要通过代理访问微云 MCP 和下载地址，否则浏览器会被 CORS 拦截。仓库提供 Cloudflare Workers 代理：
+WebDAV 同步可直连支持浏览器 CORS 的服务端；如果服务端不允许浏览器跨域请求，可以部署仓库提供的 Cloudflare Workers 代理，或者使用仓库里的 Docker 代理：
 
 ```bash
-cd proxy/weiyun
+cd proxy/webdav
+npx wrangler login
 npx wrangler deploy
 ```
 
 部署后把 Worker 地址写入 `.env.local`：
 
 ```env
-VITE_WEIYUN_PROXY_URL=https://coinly-weiyun-proxy.<account>.workers.dev
+VITE_WEBDAV_PROXY_URL=https://coinly-webdav-proxy.<account>.workers.dev
 ```
 
-也可以在同步提供方表单里为单个腾讯微云目标填写代理地址。微云 MCP Token 仍由用户在 Coinly 中填写，Worker 只做无状态转发，不保存 Token 或账本数据。
+也可以在同步源表单里为单个 WebDAV 目标填写代理地址。Worker 只做无状态转发，不保存账号、密码或账本数据。WebDAV 默认目录路径为 `Coinly`。
+
+Docker 代理：
+
+```bash
+cd proxy/webdav
+docker build -t coinly-webdav-proxy .
+docker run --rm -p 8787:8787 coinly-webdav-proxy
+```
+
+然后把 `http://your-server:8787` 或反代后的地址填到 `VITE_WEBDAV_PROXY_URL`。
 
 ## 本地验证
 

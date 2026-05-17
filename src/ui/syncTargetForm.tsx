@@ -21,11 +21,7 @@ export function SyncTargetForm(props: {
       {props.target.provider === "s3-compatible" && <S3Fields target={props.target} update={update} />}
       {props.target.provider === "onedrive" && <OneDriveFields target={props.target} />}
       {props.target.provider === "google-drive" && <GoogleDriveFields target={props.target} />}
-      {props.target.provider === "weiyun" && <WeiyunFields target={props.target} update={update} />}
-      <label className="flex min-h-10 items-center gap-2 text-sm">
-        <Switch checked={props.target.enabled} onChange={(enabled) => update({ enabled })} />
-        自动同步这个提供方
-      </label>
+      {props.target.provider === "webdav" && <WebDavFields target={props.target} update={update} />}
     </div>
   );
 }
@@ -43,8 +39,8 @@ function S3Fields(props: {
       <TextField label="访问密钥 ID" value={props.target.accessKeyId ?? ""} onChange={(accessKeyId) => props.update({ accessKeyId })} />
       <TextField label="访问密钥 Secret" type="password" value={props.target.secretAccessKey ?? ""} onChange={(secretAccessKey) => props.update({ secretAccessKey })} />
       <label className="flex min-h-10 items-center gap-2 text-sm">
-        <Switch checked={Boolean(props.target.forcePathStyle)} onChange={(forcePathStyle) => props.update({ forcePathStyle })} />
-        路径样式
+        <Switch checked={Boolean(props.target.forcePathStyle)} onChange={(forcePathStyle: boolean) => props.update({ forcePathStyle })} />
+        使用路径样式访问
       </label>
     </>
   );
@@ -70,18 +66,17 @@ function GoogleDriveFields(props: {
   );
 }
 
-function WeiyunFields(props: {
+function WebDavFields(props: {
   readonly target: SyncTarget;
   readonly update: (patch: Partial<SyncTarget>) => void;
 }) {
-  const proxyHelp = props.target.proxyBaseUrl
-    ? "当前目标会使用这里填写的代理地址。"
-    : "留空时使用部署环境中的 VITE_WEIYUN_PROXY_URL。";
   return (
     <>
-      <TextField label="MCP Token" type="password" value={props.target.accessToken ?? ""} onChange={(accessToken) => props.update({ accessToken })} />
+      <TextField label="WebDAV URL" value={props.target.webdavUrl ?? ""} onChange={(webdavUrl) => props.update({ webdavUrl })} />
       <TextField label="代理地址" value={props.target.proxyBaseUrl ?? ""} onChange={(proxyBaseUrl) => props.update({ proxyBaseUrl })} />
-      <p className="text-sm text-[var(--color-text-secondary)]">{proxyHelp} 同步文件会写入 Token 绑定目录。</p>
+      <TextField label="目录路径" value={props.target.directoryPath ?? "Coinly"} onChange={(directoryPath) => props.update({ directoryPath })} />
+      <TextField label="用户名" value={props.target.webdavUsername ?? ""} onChange={(webdavUsername) => props.update({ webdavUsername })} />
+      <TextField label="密码" type="password" value={props.target.webdavPassword ?? ""} onChange={(webdavPassword) => props.update({ webdavPassword })} />
     </>
   );
 }
@@ -97,7 +92,7 @@ function providerOptions(): readonly FormOption[] {
     { value: "s3-compatible", label: "S3-Compatible" },
     { value: "onedrive", label: "OneDrive" },
     { value: "google-drive", label: "Google Drive" },
-    { value: "weiyun", label: "腾讯微云" },
+    { value: "webdav", label: "WebDAV" },
   ];
 }
 

@@ -42,11 +42,11 @@ function SecurityDescription(props: {
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-      <span>本地账本、备份、同步和默认导出均写入加密包。</span>
-      <span>{props.remembered ? "当前浏览器刷新后可自动解锁。" : "当前浏览器刷新后需要输入口令。"}</span>
+      <span>本地账本、备份文件和同步数据都会加密保存。</span>
+      <span>{props.remembered ? "当前浏览器会自动解锁。" : "当前浏览器需要输入口令。"}</span>
       <span className="flex flex-wrap gap-2">
         {props.remembered ? <Button onClick={props.clear}>关闭自动解锁</Button> : <Button onClick={props.remember}>开启自动解锁</Button>}
-        <Button onClick={props.openKeyChange}>修改加密密钥</Button>
+        <Button onClick={props.openKeyChange}>修改账本口令</Button>
       </span>
     </div>
   );
@@ -72,17 +72,17 @@ function KeyChangeModal(props: {
   const footer = (
     <div className="flex justify-end gap-2">
       <Button onClick={close}>取消</Button>
-      <Button variant="primary" loading={saving} onClick={() => submitKeyChange({ ...props, passphrase, confirm, rememberDevice, close, setSaving })}>保存新密钥</Button>
+      <Button variant="primary" loading={saving} onClick={() => submitKeyChange({ ...props, passphrase, confirm, rememberDevice, close, setSaving })}>保存新口令</Button>
     </div>
   );
   return (
-    <Modal centered open={props.open} title="修改加密密钥" footer={footer} onCancel={close}>
+    <Modal centered open={props.open} title="修改账本口令" footer={footer} onCancel={close}>
       <div className="space-y-4 px-4 py-2">
-        <TextField label="新加密密钥" type="password" value={passphrase} onChange={setPassphrase} />
-        <TextField label="确认新加密密钥" type="password" value={confirm} onChange={setConfirm} />
+        <TextField label="新账本口令" type="password" value={passphrase} onChange={setPassphrase} />
+        <TextField label="确认账本口令" type="password" value={confirm} onChange={setConfirm} />
         <label className="flex min-h-10 items-center gap-2 text-sm">
           <Switch checked={rememberDevice} onChange={setRememberDevice} />
-          在当前浏览器开启自动解锁
+          自动解锁
         </label>
       </div>
     </Modal>
@@ -103,21 +103,21 @@ function submitKeyChange(options: {
   try {
     validatePassphrases(options.passphrase, options.confirm);
   } catch (error) {
-    options.setMessage(errorMessage(error, "加密密钥无效"));
+    options.setMessage(errorMessage(error, "账本口令无效"));
     return;
   }
   options.setSaving(true);
   changeVaultPassphrase(options.passphrase, options.rememberDevice, () => saveData(options.data, options.token).then(() => undefined))
     .then(() => options.setRemembered(options.rememberDevice))
-    .then(() => options.setMessage("加密密钥已更新"))
+    .then(() => options.setMessage("账本口令已更新"))
     .then(options.close)
-    .catch((error: unknown) => options.setMessage(errorMessage(error, "修改加密密钥失败")))
+    .catch((error: unknown) => options.setMessage(errorMessage(error, "修改账本口令失败")))
     .finally(() => options.setSaving(false));
 }
 
 function validatePassphrases(passphrase: string, confirm: string): void {
-  if (!passphrase.trim()) throw new Error("新加密密钥不能为空");
-  if (passphrase !== confirm) throw new Error("两次输入的新加密密钥不一致");
+  if (!passphrase.trim()) throw new Error("新账本口令不能为空");
+  if (passphrase !== confirm) throw new Error("两次输入的账本口令不一致");
 }
 
 function errorMessage(error: unknown, fallback: string): string {

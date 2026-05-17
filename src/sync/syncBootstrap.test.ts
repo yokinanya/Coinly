@@ -57,7 +57,7 @@ describe("sync bootstrap import", () => {
     }), currentUnlockState());
 
     await expect(previewSyncSettingsPackage(packageValue, "test-passphrase"))
-      .rejects.toThrow("同步目标包含不支持的提供方");
+      .rejects.toThrow("同步目标包含不支持的来源");
   });
 
   it("rejects invalid remote data without creating a local ledger", async () => {

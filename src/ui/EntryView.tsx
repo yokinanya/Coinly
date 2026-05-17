@@ -58,13 +58,13 @@ function AiPanel(props: {
   };
   return (
     <div className="panel space-y-4 p-4">
-      <h2 className="font-semibold text-[var(--color-text)]">AI 解析</h2>
+      <h2 className="font-semibold text-[var(--color-text)]">AI 记账解析</h2>
       <Input.TextArea autoSize={{ minRows: 1, maxRows: 6 }} value={props.text} onChange={(value) => props.setText(String(value))} placeholder="例如：星巴克 38 元，餐饮，今天下午" />
       <AiMessage state={state} />
       <div className="flex flex-wrap gap-2">
         <Button loading={pending} disabled={pending} onClick={parseText}><Sparkles size={16} />解析文本</Button>
         <Upload accept="image/*" beforeUpload={parseImage} maxCount={1} showUploadList={false}>
-          <Button loading={pending} disabled={pending} icon={<Camera size={16} />}>截图导入</Button>
+          <Button loading={pending} disabled={pending} icon={<Camera size={16} />}>解析图片</Button>
         </Upload>
       </div>
     </div>
@@ -87,7 +87,7 @@ function CandidatePanel(props: {
   readonly onCancel: () => void;
 }) {
   return (
-    <SectionPanel title="AI 候选交易">
+    <SectionPanel title="识别结果">
       <div className="grid gap-2 text-sm text-[var(--color-text-secondary)] md:grid-cols-4">
         <span>{TRANSACTION_KIND_LABELS[props.value.kind]}</span>
         <span>{money(props.value.amount, props.value.currency)}</span>
@@ -95,8 +95,8 @@ function CandidatePanel(props: {
         <span className="truncate">{props.value.note || "无备注"}</span>
       </div>
       <div className="mt-3 flex gap-2">
-        <Button variant="primary" onClick={props.onUse}>使用候选</Button>
-        <Button onClick={props.onCancel}>取消候选</Button>
+        <Button variant="primary" onClick={props.onUse}>填入表单</Button>
+        <Button onClick={props.onCancel}>取消</Button>
       </div>
     </SectionPanel>
   );
@@ -174,7 +174,7 @@ function validateAiCandidate(
   const result = validateTransactionDraft(candidate, props.data);
   if (!result.valid || !result.draft) throw new Error(result.errors.join("；"));
   props.setCandidate(result.draft);
-  setState({ tone: "success", text: "AI 已生成候选交易，请确认后再写入账本" });
+  setState({ tone: "success", text: "已生成识别结果，请确认后保存" });
 }
 
 function applyCandidate(options: {
@@ -186,6 +186,6 @@ function applyCandidate(options: {
 }) {
   options.setDraft(options.candidate);
   options.setCandidate(undefined);
-  options.setMessage("已填入候选");
-  options.setStatus({ tone: "info", text: "AI 候选已填入表单" });
+  options.setMessage("已填入表单");
+  options.setStatus({ tone: "info", text: "识别结果已填入表单" });
 }

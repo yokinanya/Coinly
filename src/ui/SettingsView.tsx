@@ -18,14 +18,15 @@ import { FadeIn } from "./motion";
 export function SettingsView(props: {
   readonly data: AppData;
   readonly token: import("../storage/indexedDb").SaveToken;
-  readonly setData: (data: AppData) => void;
+  readonly setData: (data: AppData | undefined) => void;
+  readonly setVaultData: (data: AppData) => void;
 }) {
   const report = useCallback((value: string) => {
     showMessage(value);
   }, []);
-  const updateSync = (settings: SyncSettings) => props.setData(bumpVersion({ ...props.data, syncSettings: settings }));
-  const updateAi = (settings: AiSettings) => props.setData(bumpVersion({ ...props.data, aiSettings: settings }));
-  const updateTheme = (theme: ThemeMode) => props.setData(bumpVersion({ ...props.data, uiSettings: { theme } }));
+  const updateSync = (settings: SyncSettings) => props.setVaultData(bumpVersion({ ...props.data, syncSettings: settings }));
+  const updateAi = (settings: AiSettings) => props.setVaultData(bumpVersion({ ...props.data, aiSettings: settings }));
+  const updateTheme = (theme: ThemeMode) => props.setVaultData(bumpVersion({ ...props.data, uiSettings: { theme } }));
 
   return (
     <section className="space-y-5">
@@ -35,7 +36,7 @@ export function SettingsView(props: {
           { key: "theme", node: <ThemePanel theme={props.data.uiSettings?.theme ?? "system"} onChange={updateTheme} /> },
           { key: "sync", node: <SyncPanel data={props.data} settings={props.data.syncSettings} onChange={updateSync} applyRemote={props.setData} setMessage={report} /> },
           { key: "ai", node: <AiSettingsPanel settings={props.data.aiSettings} onChange={updateAi} /> },
-          { key: "currency", node: <CurrencyPanel data={props.data} setData={props.setData} setMessage={report} /> },
+          { key: "currency", node: <CurrencyPanel data={props.data} setData={props.setVaultData} setMessage={report} /> },
           { key: "data", node: <DataPanel data={props.data} token={props.token} setData={props.setData} setMessage={report} /> },
           { key: "catalog", node: <CatalogPanel data={props.data} /> },
         ]}

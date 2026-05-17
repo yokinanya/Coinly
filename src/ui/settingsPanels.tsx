@@ -69,7 +69,7 @@ export function CurrencyPanel(props: {
 export function DataPanel(props: {
   readonly data: AppData;
   readonly token: import("../storage/indexedDb").SaveToken;
-  readonly setData: (data: AppData) => void;
+  readonly setData: (data: AppData | undefined) => void;
   readonly setMessage: (value: string) => void;
 }) {
   return <DataVaultPanel {...props} />;

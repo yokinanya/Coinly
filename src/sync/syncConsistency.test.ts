@@ -107,14 +107,16 @@ function dayMs(): number {
 }
 
 function singleTargetSettings() {
-  return { enabled: true, primary: s3Target({ forcePathStyle: true }) };
+  return { enabled: true, targets: [s3Target({ forcePathStyle: true })] };
 }
 
 function multiTargetSettings() {
   return {
     enabled: true,
-    primary: s3Target({ forcePathStyle: true, bucket: "primary" }),
-    backup: s3Target({ forcePathStyle: true, bucket: "backup" }),
+    targets: [
+      s3Target({ forcePathStyle: true, bucket: "primary" }),
+      s3Target({ forcePathStyle: true, bucket: "backup" }),
+    ],
   };
 }
 

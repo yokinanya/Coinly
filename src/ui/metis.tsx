@@ -7,8 +7,11 @@ import {
   Drawer,
   Input,
   InputNumber,
+  Layout,
   List,
+  Menu,
   Modal,
+  Popconfirm,
   Select,
   Segmented,
   Splitter,
@@ -46,6 +49,6 @@ export function Button({ variant = "default", children, ...props }: ButtonProps)
   );
 }
 
-export { Alert, Checkbox, DatePicker, Divider, Drawer, Input, InputNumber, List, Modal, Select, Segmented, Splitter, Switch, Tabs, Table, Tag, Transition, Upload };
+export { Alert, Checkbox, DatePicker, Divider, Drawer, Input, InputNumber, Layout, List, Menu, Modal, Popconfirm, Select, Segmented, Splitter, Switch, Tabs, Table, Tag, Transition, Upload };
 export const Message = MetisMessage;
 export const Notification = MetisNotification;

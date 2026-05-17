@@ -2,12 +2,12 @@ import type { AppData, SyncProvider, SyncSettings, SyncTarget } from "../domain/
 import { parseImportedData } from "../storage/indexedDb";
 import { decryptAppData, encryptAppData, isEncryptedPackage } from "../storage/encryption";
 import { currentUnlockState } from "../storage/vaultSession";
-import { authorizeGoogleDrive, disconnectGoogleDrive, readGoogleDrive, testGoogleDrive, writeGoogleDrive } from "./googleDriveAdapter";
-import { authorizeOneDrive, disconnectOneDrive, readOneDrive, testOneDrive, writeOneDrive } from "./oneDriveAdapter";
-import { readS3, writeS3 } from "./s3Adapter";
+import { authorizeGoogleDrive, deleteGoogleDrive, disconnectGoogleDrive, readGoogleDrive, testGoogleDrive, writeGoogleDrive } from "./googleDriveAdapter";
+import { authorizeOneDrive, deleteOneDrive, disconnectOneDrive, readOneDrive, testOneDrive, writeOneDrive } from "./oneDriveAdapter";
+import { deleteS3, readS3, writeS3 } from "./s3Adapter";
 import { DEFAULT_OBJECT_KEY } from "./syncDefaults";
 import type { RemoteSnapshot } from "./syncTypes";
-import { readWeiyun, testWeiyun, writeWeiyun } from "./weiyunAdapter";
+import { deleteWebDav, readWebDav, testWebDav, writeWebDav } from "./webdavAdapter";
 
 export interface SyncResult {
   readonly status: SyncStatus;
@@ -61,7 +61,7 @@ export async function syncSingleTarget(data: AppData, target: SyncTarget): Promi
 }
 
 export async function forceSyncTargets(data: AppData, targets: readonly SyncTarget[]): Promise<SyncResult> {
-  if (targets.length === 0) throw new Error("未选择同步提供方");
+  if (targets.length === 0) throw new Error("未选择同步源");
   return syncActiveTargets(data, toActiveTargets(targets.map(normalizeTarget)));
 }
 
@@ -102,6 +102,27 @@ export async function disconnectSyncTarget(target: SyncTarget): Promise<SyncTarg
   if (target.provider === "onedrive") return disconnectOneDrive(target);
   if (target.provider === "google-drive") return disconnectGoogleDrive(target);
   return target;
+}
+
+export async function deleteSyncTarget(target: SyncTarget): Promise<void> {
+  const normalized = normalizeTarget(target);
+  if (normalized.provider === "s3-compatible") {
+    await deleteS3(normalized);
+    return;
+  }
+  if (normalized.provider === "onedrive") {
+    await deleteOneDrive(normalized);
+    return;
+  }
+  if (normalized.provider === "google-drive") {
+    await deleteGoogleDrive(normalized);
+    return;
+  }
+  if (normalized.provider === "webdav") {
+    await deleteWebDav(normalized);
+    return;
+  }
+  throw new Error("同步目标类型不支持");
 }
 
 export function normalizeSyncSettings(settings?: SyncSettings): SyncSettings | undefined {
@@ -166,7 +187,7 @@ function adapterFor(target: SyncTarget): SyncAdapter {
   if (target.provider === "s3-compatible") return { read: readS3, write: writeS3, test: testS3 };
   if (target.provider === "onedrive") return { read: readOneDrive, write: writeOneDrive, test: testOneDrive };
   if (target.provider === "google-drive") return { read: readGoogleDrive, write: writeGoogleDrive, test: testGoogleDrive };
-  if (target.provider === "weiyun") return { read: readWeiyun, write: writeWeiyun, test: testWeiyun };
+  if (target.provider === "webdav") return { read: readWebDav, write: writeWebDav, test: testWebDav };
   throw new Error("同步目标类型不支持");
 }
 
@@ -175,11 +196,7 @@ function testS3(target: SyncTarget): Promise<ConnectionTestResult> {
 }
 
 function settingsTargets(settings: SyncSettings): readonly SyncTarget[] {
-  if (settings.targets) return settings.targets.map(normalizeTarget);
-  const legacyTargets = [settings.primary, settings.backup].filter(isPresent);
-  if (legacyTargets.length > 0) return legacyTargets.map(normalizeTarget);
-  if (settings.provider && settings.endpoint) return [legacyTarget(settings)];
-  return [];
+  return (settings.targets ?? []).map(normalizeTarget);
 }
 
 function normalizeTarget(target: SyncTarget): SyncTarget {
@@ -252,7 +269,7 @@ export function canonicalSyncData(data: AppData): string {
 
 function activeTargets(settings: SyncSettings): readonly ActiveTarget[] {
   const enabledTargets = (settings.targets ?? []).filter((target) => target.enabled);
-  if (enabledTargets.length === 0) throw new Error("未配置已启用同步提供方");
+  if (enabledTargets.length === 0) throw new Error("未配置已启用同步源");
   return toActiveTargets(enabledTargets);
 }
 
@@ -274,18 +291,6 @@ function markAutoSyncAttempt(targets: readonly SyncTarget[]): void {
   targets.forEach((target) => autoSyncAttemptAt.set(targetIdentity(target), timestamp));
 }
 
-function legacyTarget(settings: SyncSettings): SyncTarget {
-  return {
-    enabled: true,
-    provider: "s3-compatible",
-    endpoint: settings.endpoint ?? "",
-    bucket: settings.bucket,
-    objectKey: settings.objectKey ?? DEFAULT_OBJECT_KEY,
-    accessKeyId: settings.username,
-    secretAccessKey: settings.accessKey,
-  };
-}
-
 function defaultSyncTarget(provider: SyncProvider): SyncTarget {
   return { enabled: true, provider, endpoint: "", objectKey: provider === "s3-compatible" ? DEFAULT_OBJECT_KEY : "" };
 }
@@ -303,7 +308,7 @@ function targetIdentity(target: SyncTarget): string {
 function providerLabel(provider: SyncProvider): string {
   if (provider === "s3-compatible") return "S3-Compatible";
   if (provider === "onedrive") return "OneDrive";
-  if (provider === "weiyun") return "腾讯微云";
+  if (provider === "webdav") return "WebDAV";
   return "Google Drive";
 }
 
@@ -318,7 +323,7 @@ function isPresent<T>(value: T | undefined): value is T {
 
 function isSupportedProvider(target: SyncTarget): boolean {
   const provider = (target as { readonly provider?: string }).provider;
-  return provider === "s3-compatible" || provider === "onedrive" || provider === "google-drive" || provider === "weiyun";
+  return provider === "s3-compatible" || provider === "onedrive" || provider === "google-drive" || provider === "webdav";
 }
 
 interface SyncAdapter {

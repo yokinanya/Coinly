@@ -13,7 +13,7 @@ export function SyncPanel(props: {
   readonly data: AppData;
   readonly settings?: SyncSettings;
   readonly onChange: (settings: SyncSettings) => void;
-  readonly applyRemote: (data: AppData) => void;
+  readonly applyRemote: (data: AppData | undefined) => void;
   readonly setMessage: (value: string) => void;
 }) {
   const settings = normalizeSyncSettings(props.settings) ?? defaultSyncSettings();
@@ -29,7 +29,7 @@ export function SyncPanel(props: {
   };
   return (
     <SettingsSection title="同步">
-      <div className="space-y-4">
+      <div className="w-full space-y-4">
         <SyncToolbar
           hasAutoTargets={hasAutoTargets}
           syncing={syncingAll}
@@ -45,7 +45,16 @@ export function SyncPanel(props: {
           clear={() => setResolution(undefined)}
           setMessage={props.setMessage}
         />
-        <TargetModal target={newTarget} clear={() => setNewTarget(undefined)} save={(target) => setTargets(upsertSyncTarget(targets, target))} />
+        <TargetModal
+          target={newTarget}
+          clear={() => setNewTarget(undefined)}
+          save={(target) => setTargets(upsertSyncTarget(targets, target))}
+          data={props.data}
+          targets={targets}
+          setTargets={setTargets}
+          onSyncResult={onSyncResult}
+          setMessage={props.setMessage}
+        />
       </div>
     </SettingsSection>
   );
@@ -59,7 +68,7 @@ function SyncToolbar(props: {
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Button onClick={props.onAdd}><Plus size={16} />添加提供方</Button>
+      <Button onClick={props.onAdd}><Plus size={16} />添加同步源</Button>
       <Button disabled={!props.hasAutoTargets || props.syncing} loading={props.syncing} onClick={props.onSyncAll}>
         <RefreshCw size={16} />同步全部
       </Button>

@@ -1,5 +1,5 @@
 import type { SyncTarget } from "../domain/types";
-import { assertConditionalWriteResponse, readRemotePayloadResponse } from "./remotePayload";
+import { assertConditionalWriteResponse, assertDeleteResponse, readRemotePayloadResponse } from "./remotePayload";
 import type { RemoteSnapshot } from "./syncTypes";
 
 type RequestHeaders = Record<string, string>;
@@ -23,6 +23,12 @@ export async function writeS3(target: SyncTarget, payload: string, version?: str
   assertConditionalWriteResponse(response, "S3-Compatible");
 }
 
+export async function deleteS3(target: SyncTarget, version?: string): Promise<void> {
+  const request = await signedRequest(target, "DELETE", "", version);
+  const response = await s3Fetch(request.url, { method: "DELETE", headers: request.headers });
+  assertDeleteResponse(response, "S3-Compatible");
+}
+
 export function s3ObjectUrl(target: SyncTarget): string {
   const config = requireS3Config(target);
   const endpoint = new URL(config.endpoint);
@@ -36,7 +42,7 @@ export function s3ObjectUrl(target: SyncTarget): string {
   return endpoint.toString();
 }
 
-async function signedRequest(target: SyncTarget, method: "GET" | "PUT", body = "", version?: string) {
+async function signedRequest(target: SyncTarget, method: "GET" | "PUT" | "DELETE", body = "", version?: string) {
   const config = requireS3Config(target);
   const url = s3ObjectUrl(config);
   const date = new Date();
@@ -69,7 +75,7 @@ function s3NetworkError(url: string, error: unknown): Error {
 
 async function authorizationHeader(
   target: RequiredS3Target,
-  method: "GET" | "PUT",
+  method: "GET" | "PUT" | "DELETE",
   url: string,
   headers: RequestHeaders,
   shortDate: string,
@@ -88,7 +94,7 @@ async function authorizationHeader(
 }
 
 function canonicalRequest(
-  method: "GET" | "PUT",
+  method: "GET" | "PUT" | "DELETE",
   url: string,
   headers: RequestHeaders,
   signedHeaders: string,
@@ -111,7 +117,7 @@ function baseHeaders(
   url: string,
   payloadHash: string,
   amzDate: string,
-  method: "GET" | "PUT",
+  method: "GET" | "PUT" | "DELETE",
   version?: string,
 ): RequestHeaders {
   const headers: RequestHeaders = {
@@ -122,7 +128,8 @@ function baseHeaders(
   if (version) {
     headers["if-match"] = version;
   }
-  return method === "PUT" ? { ...headers, "content-type": "application/json" } : headers;
+  if (method === "PUT") return { ...headers, "content-type": "application/json" };
+  return headers;
 }
 
 async function signingKey(target: RequiredS3Target, shortDate: string): Promise<ArrayBuffer> {

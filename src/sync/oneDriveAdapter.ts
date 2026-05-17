@@ -1,7 +1,7 @@
 import type { AccountInfo, AuthenticationResult, PublicClientApplication } from "@azure/msal-browser";
 import type { SyncTarget } from "../domain/types";
 import { CLOUD_SYNC_FILE_NAME } from "./syncDefaults";
-import { assertConditionalWriteResponse, readRemotePayloadResponse } from "./remotePayload";
+import { assertConditionalWriteResponse, assertDeleteResponse, readRemotePayloadResponse } from "./remotePayload";
 import { oauthClientId, oneDriveAuthority } from "./oauthConfig";
 import type { RemoteSnapshot } from "./syncTypes";
 
@@ -35,11 +35,16 @@ export async function writeOneDrive(target: SyncTarget, payload: string, version
   assertConditionalWriteResponse(response, "OneDrive");
 }
 
+export async function deleteOneDrive(target: SyncTarget, version?: string): Promise<void> {
+  const response = await graphDelete(target, version);
+  assertDeleteResponse(response, "OneDrive");
+}
+
 export async function testOneDrive(target: SyncTarget): Promise<"found" | "missing"> {
   return (await readOneDrive(target)) ? "found" : "missing";
 }
 
-async function graphFetch(target: SyncTarget, method: "GET" | "PUT", body?: string, version?: string): Promise<Response> {
+async function graphFetch(target: SyncTarget, method: "GET" | "PUT" | "DELETE", body?: string, version?: string): Promise<Response> {
   const token = await acquireOneDriveToken(target, false);
   const response = await fetch(oneDriveContentUrl(), {
     method,
@@ -48,6 +53,25 @@ async function graphFetch(target: SyncTarget, method: "GET" | "PUT", body?: stri
   });
   if (response.status === 401 || response.status === 403) throw new Error("OneDrive 授权已失效，请重新授权");
   return response;
+}
+
+async function graphDelete(target: SyncTarget, version?: string): Promise<Response> {
+  const token = await acquireOneDriveToken(target, false);
+  const file = await findOneDriveFile(target, token.accessToken);
+  if (!file) return new Response("", { status: 404 });
+  return fetch(`${GRAPH_ROOT}/me/drive/items/${encodeURIComponent(file.id)}`, {
+    method: "DELETE",
+    headers: graphHeaders(token.accessToken, false, version),
+  });
+}
+
+async function findOneDriveFile(target: SyncTarget, accessToken: string): Promise<OneDriveFile | undefined> {
+  const response = await fetch(`${GRAPH_ROOT}/me/drive/special/approot/children?$select=id,name,eTag`, {
+    headers: graphHeaders(accessToken, false),
+  });
+  if (!response.ok) throw new Error(`OneDrive 读取文件列表失败：${response.status} ${response.statusText}`);
+  const body = await response.json() as { readonly value?: readonly OneDriveFile[] };
+  return body.value?.find((item) => item.name === CLOUD_SYNC_FILE_NAME);
 }
 
 async function acquireOneDriveToken(target: SyncTarget, interactive: boolean): Promise<OneDriveToken> {
@@ -219,4 +243,10 @@ interface OneDriveProfile {
   readonly displayName?: string;
   readonly userPrincipalName?: string;
   readonly mail?: string;
+}
+
+interface OneDriveFile {
+  readonly id: string;
+  readonly name: string;
+  readonly eTag?: string;
 }

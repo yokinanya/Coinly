@@ -26,3 +26,11 @@ export function assertConditionalWriteResponse(response: Response, label: string
   }
   assertWriteResponse(response, label);
 }
+
+export function assertDeleteResponse(response: Response, label: string): void {
+  if (response.ok || response.status === 404) return;
+  if (response.status === 409 || response.status === 412) {
+    throw new Error(`${label} 远端已发生变化，请重新同步后再删除`);
+  }
+  throw new Error(`删除 ${label} 加密包失败：${response.status} ${response.statusText}`);
+}

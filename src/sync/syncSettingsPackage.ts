@@ -1,12 +1,11 @@
-import type { LegacySyncProvider, SyncProvider, SyncSettings } from "../domain/types";
+import type { SyncProvider, SyncSettings } from "../domain/types";
 import { currentUnlockState } from "../storage/vaultSession";
 import { decryptTextPackage, encryptTextPackage, isEncryptedPackage, unlockPackageWithPassphrase } from "../storage/encryption";
 import { normalizeSyncSettings } from "./syncClient";
 
 export const SYNC_SETTINGS_FORMAT = "coinly.sync-settings.v1";
 
-const SYNC_PROVIDER_VALUES: readonly SyncProvider[] = ["s3-compatible", "onedrive", "google-drive", "weiyun"];
-const LEGACY_PROVIDER_VALUES: readonly LegacySyncProvider[] = ["s3"];
+const SYNC_PROVIDER_VALUES: readonly SyncProvider[] = ["s3-compatible", "onedrive", "google-drive", "webdav"];
 const TARGET_STRING_FIELDS = [
   "id",
   "name",
@@ -20,6 +19,10 @@ const TARGET_STRING_FIELDS = [
   "driveFolderId",
   "accessToken",
   "proxyBaseUrl",
+  "directoryPath",
+  "webdavUrl",
+  "webdavUsername",
+  "webdavPassword",
   "accountId",
   "username",
 ] as const;
@@ -84,30 +87,21 @@ function readSyncSettings(value: unknown): SyncSettings {
 function requireNormalizedSettings(settings?: SyncSettings): SyncSettings {
   const normalized = normalizeSyncSettings(settings);
   if (!normalized || normalized.targets?.length === 0) {
-    throw new Error("同步配置未包含同步提供方");
+    throw new Error("同步配置未包含同步源");
   }
   return normalized;
 }
 
 function validateSyncSettings(value: Record<string, unknown>): void {
   optionalBooleanField(value, "enabled");
-  optionalProviderField(value, "provider");
-  SETTINGS_STRING_FIELDS.forEach((field) => optionalStringField(value, field));
-  optionalTargetField(value, "primary");
-  optionalTargetField(value, "backup");
   validateTargets(value.targets);
+  SETTINGS_STRING_FIELDS.forEach((field) => optionalStringField(value, field));
 }
 
 function validateTargets(value: unknown): void {
   if (value === undefined) return;
   if (!Array.isArray(value)) throw new Error("同步配置 targets 必须是数组");
   value.forEach(validateTarget);
-}
-
-function optionalTargetField(value: Record<string, unknown>, field: "primary" | "backup"): void {
-  const target = value[field];
-  if (target === undefined) return;
-  validateTarget(target);
 }
 
 function validateTarget(value: unknown): void {
@@ -118,31 +112,6 @@ function validateTarget(value: unknown): void {
   requiredStringField(value, "objectKey");
   TARGET_STRING_FIELDS.forEach((field) => optionalStringField(value, field));
   optionalBooleanField(value, "forcePathStyle");
-  optionalAccountTypeField(value);
-}
-
-function optionalProviderField(value: Record<string, unknown>, field: "provider"): void {
-  const provider = value[field];
-  if (provider === undefined) return;
-  if (isSyncProvider(provider) || isLegacyProvider(provider)) return;
-  throw new Error("同步配置包含不支持的提供方");
-}
-
-function requiredSyncProviderField(value: Record<string, unknown>, field: "provider"): void {
-  const provider = value[field];
-  if (isSyncProvider(provider)) return;
-  throw new Error("同步目标包含不支持的提供方");
-}
-
-function optionalAccountTypeField(value: Record<string, unknown>): void {
-  const accountType = value.accountType;
-  if (accountType === undefined || accountType === "personal" || accountType === "work") return;
-  throw new Error("同步目标 accountType 字段无效");
-}
-
-function requiredBooleanField(value: Record<string, unknown>, field: string): void {
-  if (typeof value[field] === "boolean") return;
-  throw new Error(`同步目标 ${field} 字段必须是布尔值`);
 }
 
 function optionalBooleanField(value: Record<string, unknown>, field: string): void {
@@ -150,9 +119,20 @@ function optionalBooleanField(value: Record<string, unknown>, field: string): vo
   throw new Error(`同步配置 ${field} 字段必须是布尔值`);
 }
 
+function requiredBooleanField(value: Record<string, unknown>, field: string): void {
+  if (typeof value[field] === "boolean") return;
+  throw new Error(`同步目标 ${field} 字段必须是布尔值`);
+}
+
 function requiredStringField(value: Record<string, unknown>, field: string): void {
   if (typeof value[field] === "string") return;
   throw new Error(`同步目标 ${field} 字段必须是字符串`);
+}
+
+function requiredSyncProviderField(value: Record<string, unknown>, field: "provider"): void {
+  const provider = value[field];
+  if (isSyncProvider(provider)) return;
+  throw new Error("同步目标包含不支持的来源");
 }
 
 function optionalStringField(value: Record<string, unknown>, field: string): void {
@@ -170,10 +150,6 @@ function parsePackageJson(value: string): Partial<SyncSettingsPackage> {
 
 function isSyncProvider(value: unknown): value is SyncProvider {
   return SYNC_PROVIDER_VALUES.includes(value as SyncProvider);
-}
-
-function isLegacyProvider(value: unknown): value is LegacySyncProvider {
-  return LEGACY_PROVIDER_VALUES.includes(value as LegacySyncProvider);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

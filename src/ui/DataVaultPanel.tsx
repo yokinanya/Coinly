@@ -1,45 +1,34 @@
 import { Download, Trash2, Upload as UploadIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { initialData } from "../domain/factory";
+import { useMemo, useState } from "react";
 import type { AppData, SyncSettings, SyncTarget } from "../domain/types";
 import {
-  createBackup,
-  deleteBackup,
+  clearStoredVault,
   exportData,
-  listBackups,
   previewImportData,
-  readBackupData,
 } from "../storage/indexedDb";
-import type { BackupRecord, DataSummary, ImportPreview } from "../storage/indexedDb";
+import type { DataSummary, ImportPreview } from "../storage/indexedDb";
 import { forceSyncTargets, normalizeSyncSettings, type SyncResult } from "../sync/syncClient";
-import { loadDataFromSyncSettings } from "../sync/syncBootstrap";
-import { exportSyncSettingsPackage, previewSyncSettingsPackage, type SyncSettingsPreview } from "../sync/syncSettingsPackage";
+import { exportSyncSettingsPackage } from "../sync/syncSettingsPackage";
+import { syncSettingsQrDataUrl } from "../sync/syncSettingsQr";
+import { clearRememberedDevice, lockVault } from "../storage/vaultSession";
 import { ConfirmDialog } from "./common";
-import { Button, Checkbox, List, Modal, Upload } from "./metis";
+import { Button, Checkbox, Modal, Upload } from "./metis";
 import { DataSecurityPanel } from "./DataSecurityPanel";
-import { FadeIn } from "./motion";
 import { SettingsSection } from "./settingsSection";
-import { providerLabel, targetIdentity } from "./syncTargetHelpers";
+import { targetIdentity } from "./syncTargetHelpers";
 import { SyncResolutionPanel, type SyncResolution } from "./syncResolutionPanel";
 
 export function DataVaultPanel(props: {
   readonly data: AppData;
   readonly token: import("../storage/indexedDb").SaveToken;
-  readonly setData: (data: AppData) => void;
+  readonly setData: (data: AppData | undefined) => void;
   readonly setMessage: (value: string) => void;
 }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [preview, setPreview] = useState<ImportPreview>();
-  const [backups, setBackups] = useState<readonly BackupRecord[]>([]);
-  const [restoring, setRestoring] = useState<BackupRecord>();
-  const [deleting, setDeleting] = useState<BackupRecord>();
   const [exportingSync, setExportingSync] = useState(false);
-  const [selectedSyncTargets, setSelectedSyncTargets] = useState<readonly string[]>([]);
-  const [syncImport, setSyncImport] = useState<SyncImportPreview>();
+  const [selectedSyncTarget, setSelectedSyncTarget] = useState<string>();
   const [resolution, setResolution] = useState<SyncResolution>();
-  useEffect(() => {
-    refreshBackups(setBackups, props.setMessage);
-  }, [props.setMessage]);
   return (
     <SettingsSection title="数据管理">
       <div className="space-y-4">
@@ -47,26 +36,20 @@ export function DataVaultPanel(props: {
         <VaultActions
           {...props}
           setPreview={setPreview}
-          setBackups={setBackups}
           setConfirmClear={setConfirmClear}
-          openSyncExport={() => openSyncExport(props.data, setSelectedSyncTargets, setExportingSync)}
-          setSyncImport={setSyncImport}
+          openSyncExport={() => openSyncExport(props.data, setSelectedSyncTarget, setExportingSync)}
         />
-        <FadeIn><BackupList backups={backups} setRestoring={setRestoring} setDeleting={setDeleting} /></FadeIn>
       </div>
       <ImportPreviewModal preview={preview} clear={() => setPreview(undefined)} setData={props.setData} setMessage={props.setMessage} />
-      <RestoreDialog backup={restoring} clear={() => setRestoring(undefined)} setData={props.setData} setMessage={props.setMessage} />
-      <DeleteBackupDialog backup={deleting} clear={() => setDeleting(undefined)} setBackups={setBackups} setMessage={props.setMessage} />
       <SyncSettingsExportModal
         data={props.data}
         open={exportingSync}
-        selected={selectedSyncTargets}
-        setSelected={setSelectedSyncTargets}
+        selected={selectedSyncTarget}
+        setSelected={setSelectedSyncTarget}
         close={() => setExportingSync(false)}
         setResolution={setResolution}
         setMessage={props.setMessage}
       />
-      <SyncSettingsImportModal preview={syncImport} clear={() => setSyncImport(undefined)} setData={props.setData} setMessage={props.setMessage} />
       <SyncResolutionPanel resolution={resolution} data={props.data} settings={props.data.syncSettings ?? { enabled: true, targets: [] }} applyRemote={props.setData} clear={() => setResolution(undefined)} setMessage={props.setMessage} />
       <ConfirmDialog open={confirmClear} title="确认清空数据" description="这会删除当前账本里的账户、分类、标签、交易、预算、订阅规则、账期和应用设置，并恢复为初始数据。" onCancel={() => setConfirmClear(false)} onConfirm={() => clearData(props, setConfirmClear)} />
     </SettingsSection>
@@ -77,10 +60,8 @@ function VaultActions(props: {
   readonly data: AppData;
   readonly setMessage: (value: string) => void;
   readonly setPreview: (preview: ImportPreview) => void;
-  readonly setBackups: (backups: readonly BackupRecord[]) => void;
   readonly setConfirmClear: (open: boolean) => void;
   readonly openSyncExport: () => void;
-  readonly setSyncImport: (preview: SyncImportPreview) => void;
 }) {
   const uploadBackup = (file: File) => {
     file.text()
@@ -89,29 +70,13 @@ function VaultActions(props: {
       .catch((error: unknown) => props.setMessage(error instanceof Error ? error.message : "导入预览失败"));
     return Upload.LIST_IGNORE;
   };
-  const uploadSyncSettings = (file: File) => {
-    const passphrase = window.prompt("请输入同步配置包加密口令");
-    if (!passphrase) {
-      props.setMessage("同步配置导入已取消");
-      return Upload.LIST_IGNORE;
-    }
-    file.text()
-      .then((value) => previewSyncSettingsPackage(value, passphrase))
-      .then((preview) => props.setSyncImport({ preview, passphrase }))
-      .catch((error: unknown) => props.setMessage(error instanceof Error ? error.message : "同步配置导入预览失败"));
-    return Upload.LIST_IGNORE;
-  };
   return (
     <div className="flex flex-wrap gap-2">
       <Button onClick={() => exportData(props.data).then((json) => downloadJson(json, "coinly-data.enc.json"))}><Download size={16} />导出加密备份</Button>
       <Button onClick={props.openSyncExport}><Download size={16} />导出同步配置</Button>
-      <Upload accept="application/json" beforeUpload={uploadSyncSettings} maxCount={1} showUploadList={false}>
-        <Button icon={<UploadIcon size={16} />}>导入同步配置</Button>
-      </Upload>
       <Upload accept="application/json" beforeUpload={uploadBackup} maxCount={1} showUploadList={false}>
-        <Button icon={<UploadIcon size={16} />}>预览导入备份</Button>
+        <Button icon={<UploadIcon size={16} />}>导入账本</Button>
       </Upload>
-      <Button onClick={() => saveBackup(props.data, props.setBackups, props.setMessage)}>创建备份</Button>
       <Button variant="danger" onClick={() => props.setConfirmClear(true)}><Trash2 size={16} />清空数据</Button>
     </div>
   );
@@ -119,31 +84,32 @@ function VaultActions(props: {
 
 function openSyncExport(
   data: AppData,
-  setSelected: (values: readonly string[]) => void,
+  setSelected: (value: string | undefined) => void,
   setOpen: (value: boolean) => void,
 ): void {
   const targets = normalizeSyncSettings(data.syncSettings)?.targets ?? [];
-  setSelected(targets.map(targetIdentity));
+  setSelected(targets[0] ? targetIdentity(targets[0]) : undefined);
   setOpen(true);
 }
 
 function exportSelectedSyncSettings(options: {
   readonly data: AppData;
-  readonly targets: readonly SyncTarget[];
-  readonly selected: readonly string[];
+  readonly target: SyncTarget;
+  readonly selected?: string;
+  readonly mode: "file" | "qr";
   readonly close: () => void;
+  readonly setQrDataUrl: (value: string | undefined) => void;
   readonly setExporting: (value: boolean) => void;
   readonly setResolution: (resolution: SyncResolution) => void;
   readonly setMessage: (value: string) => void;
 }): void {
-  const targets = options.targets.filter((target) => options.selected.includes(targetIdentity(target)));
-  if (targets.length === 0) {
-    options.setMessage("请选择要导出的同步提供方");
+  if (options.selected !== options.target.id && options.selected !== targetIdentity(options.target)) {
+    options.setMessage("请选择一个同步源");
     return;
   }
   options.setExporting(true);
-  forceSyncTargets(options.data, targets)
-    .then((result) => handleForcedSyncExport({ ...options, targets, result }))
+  forceSyncTargets(options.data, [options.target])
+    .then((result) => handleForcedSyncExport({ ...options, targets: [options.target], result }))
     .catch((error: unknown) => options.setMessage(error instanceof Error ? error.message : "导出同步配置失败"))
     .finally(() => options.setExporting(false));
 }
@@ -152,50 +118,41 @@ function handleForcedSyncExport(options: {
   readonly data: AppData;
   readonly targets: readonly SyncTarget[];
   readonly result: SyncResult;
+  readonly mode: "file" | "qr";
   readonly close: () => void;
+  readonly setQrDataUrl: (value: string | undefined) => void;
   readonly setResolution: (resolution: SyncResolution) => void;
   readonly setMessage: (value: string) => void;
 }): void {
-  if (options.result.status === "remote-newer") throw new Error("远端账本较新，请先同步处理后再导出配置");
+  if (options.result.status === "remote-newer") throw new Error("云端账本较新，请先同步后再导出配置");
   if (isResolutionResult(options.result)) {
     options.setResolution({ status: options.result.status, remoteData: options.result.remoteData });
     return;
   }
-  const settings: SyncSettings = { enabled: true, targets: options.targets };
+  const settings: SyncSettings = { enabled: true, targets: options.targets.map((target) => ({ ...target, enabled: true })) };
   exportSyncSettingsPackage(settings)
-    .then((json) => downloadJson(json, "coinly-sync-settings.enc.json"))
-    .then(() => options.setMessage("同步配置已导出"))
-    .then(options.close)
+    .then((json) => exportSyncSettingsPayload(json, options))
     .catch((error: unknown) => options.setMessage(error instanceof Error ? error.message : "导出同步配置失败"));
 }
 
-function toggleSelection(
-  target: SyncTarget,
-  selected: readonly string[],
-  setSelected: (value: readonly string[]) => void,
-): void {
-  const identity = targetIdentity(target);
-  setSelected(selected.includes(identity)
-    ? selected.filter((value) => value !== identity)
-    : [...selected, identity]);
-}
-
-function importSyncSettings(props: {
-  readonly preview?: SyncImportPreview;
-  readonly clear: () => void;
-  readonly setData: (data: AppData) => void;
-  readonly setMessage: (value: string) => void;
-}): void {
-  if (!props.preview) return;
-  loadDataFromSyncSettings({
-    settings: props.preview.preview.settings,
-    passphrase: props.preview.passphrase,
-    rememberDevice: false,
-  })
-    .then(props.setData)
-    .then(() => props.setMessage("已使用同步配置拉取远端账本"))
-    .catch((error: unknown) => props.setMessage(error instanceof Error ? error.message : "同步配置导入失败"))
-    .finally(props.clear);
+function exportSyncSettingsPayload(
+  json: string,
+  options: {
+    readonly mode: "file" | "qr";
+    readonly close: () => void;
+    readonly setQrDataUrl: (value: string | undefined) => void;
+    readonly setMessage: (value: string) => void;
+  },
+): Promise<void> {
+  if (options.mode === "file") {
+    downloadJson(json, "coinly-sync-settings.enc.json");
+    options.setMessage("同步配置已导出");
+    options.close();
+    return Promise.resolve();
+  }
+  return syncSettingsQrDataUrl(json)
+    .then(options.setQrDataUrl)
+    .then(() => options.setMessage("同步配置二维码已生成"));
 }
 
 function isResolutionResult(result: SyncResult): result is SyncResult & SyncResolution {
@@ -205,50 +162,48 @@ function isResolutionResult(result: SyncResult): result is SyncResult & SyncReso
 function SyncSettingsExportModal(props: {
   readonly data: AppData;
   readonly open: boolean;
-  readonly selected: readonly string[];
-  readonly setSelected: (values: readonly string[]) => void;
+  readonly selected?: string;
+  readonly setSelected: (value: string | undefined) => void;
   readonly close: () => void;
   readonly setResolution: (resolution: SyncResolution) => void;
   readonly setMessage: (value: string) => void;
 }) {
   const [exporting, setExporting] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string>();
   const targets = useMemo(() => normalizeSyncSettings(props.data.syncSettings)?.targets ?? [], [props.data.syncSettings]);
+  const target = targets.find((item) => targetIdentity(item) === props.selected);
   const footer = (
     <div className="flex justify-end gap-2">
-      <Button onClick={props.close}>取消</Button>
-      <Button variant="primary" loading={exporting} onClick={() => exportSelectedSyncSettings({ ...props, targets, setExporting })}>同步并导出</Button>
+      <Button onClick={() => closeSyncExportModal(props.close, setQrDataUrl)}>取消</Button>
+      <Button loading={exporting} onClick={() => target && exportSelectedSyncSettings({ ...props, target, mode: "qr", setQrDataUrl, setExporting })}>导出二维码</Button>
+      <Button variant="primary" loading={exporting} onClick={() => target && exportSelectedSyncSettings({ ...props, target, mode: "file", setQrDataUrl, setExporting })}>导出文件</Button>
     </div>
   );
   return (
-    <Modal centered open={props.open} title="导出同步配置" footer={footer} onCancel={props.close}>
+    <Modal centered open={props.open} title="导出同步配置" footer={footer} onCancel={() => closeSyncExportModal(props.close, setQrDataUrl)}>
       <div className="space-y-3">
         {targets.length === 0
-          ? <p className="text-sm text-[var(--color-text-secondary)]">暂无同步提供方。</p>
+          ? <p className="text-sm text-[var(--color-text-secondary)]">暂无同步源。</p>
           : targets.map((target) => (
             <label key={targetIdentity(target)} className="flex min-h-9 items-center gap-2 text-sm">
-              <Checkbox checked={props.selected.includes(targetIdentity(target))} onChange={() => toggleSelection(target, props.selected, props.setSelected)} />
-              {target.name || providerLabel(target.provider)}
+              <Checkbox checked={props.selected === targetIdentity(target)} onChange={() => props.setSelected(targetIdentity(target))} />
+              {target.name || target.provider}
             </label>
           ))}
+        {qrDataUrl && (
+          <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-3">
+            <img className="mx-auto h-64 w-64 rounded bg-white p-2" src={qrDataUrl} alt="同步配置二维码" />
+            <p className="text-center text-xs text-[var(--color-text-secondary)]">在另一台设备创建账本时扫描此二维码。</p>
+          </div>
+        )}
       </div>
     </Modal>
   );
 }
 
-function SyncSettingsImportModal(props: {
-  readonly preview?: SyncImportPreview;
-  readonly clear: () => void;
-  readonly setData: (data: AppData) => void;
-  readonly setMessage: (value: string) => void;
-}) {
-  const footer = props.preview
-    ? <div className="flex justify-end gap-2"><Button onClick={props.clear}>取消</Button><Button variant="primary" onClick={() => importSyncSettings(props)}>拉取远端并覆盖本地</Button></div>
-    : undefined;
-  return (
-    <Modal open={Boolean(props.preview)} title="同步配置导入预览" footer={footer} onCancel={props.clear}>
-      {props.preview && <p className="text-sm text-[var(--color-text-secondary)]">提供方 {props.preview.preview.summary.targets} 个，导入时会忽略开关并拉取远端账本。</p>}
-    </Modal>
-  );
+function closeSyncExportModal(close: () => void, setQrDataUrl: (value: string | undefined) => void): void {
+  setQrDataUrl(undefined);
+  close();
 }
 
 function ImportPreviewModal(props: {
@@ -258,55 +213,12 @@ function ImportPreviewModal(props: {
   readonly setMessage: (value: string) => void;
 }) {
   const footer = props.preview
-    ? <div className="flex justify-end gap-2"><Button onClick={props.clear}>取消</Button><Button variant="primary" onClick={() => confirmImport(props)}>确认导入并替换当前账本</Button></div>
+    ? <div className="flex justify-end gap-2"><Button onClick={props.clear}>取消</Button><Button variant="primary" onClick={() => confirmImport(props)}>替换当前账本</Button></div>
     : undefined;
   return (
     <Modal open={Boolean(props.preview)} title="导入预览" footer={footer} onCancel={props.clear}>
       {props.preview && <SummaryGrid summary={props.preview.summary} />}
     </Modal>
-  );
-}
-
-function BackupList(props: {
-  readonly backups: readonly BackupRecord[];
-  readonly setRestoring: (backup: BackupRecord) => void;
-  readonly setDeleting: (backup: BackupRecord) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <h3 className="font-medium text-[var(--color-text)]">本地备份</h3>
-      {props.backups.length === 0
-        ? <p className="text-sm text-[var(--color-text-secondary)]">暂无本地备份。</p>
-        : (
-          <List
-            bordered
-            dataSource={[...props.backups]}
-            rowKey="id"
-            renderItem={(backup) => <BackupItem backup={backup} setRestoring={props.setRestoring} setDeleting={props.setDeleting} />}
-          />
-        )}
-    </div>
-  );
-}
-
-function BackupItem(props: {
-  readonly backup: BackupRecord;
-  readonly setRestoring: (backup: BackupRecord) => void;
-  readonly setDeleting: (backup: BackupRecord) => void;
-}) {
-  return (
-    <List.Item>
-      <div className="flex w-full flex-wrap items-center justify-between gap-3">
-        <span>
-          <span className="block text-sm font-medium text-[var(--color-text)]">{new Date(props.backup.createdAt).toLocaleString("zh-CN")}</span>
-          <span className="text-xs text-[var(--color-text-secondary)]">交易 {props.backup.summary.transactions} / 账户 {props.backup.summary.accounts}</span>
-        </span>
-        <span className="flex gap-2">
-          <Button onClick={() => props.setRestoring(props.backup)}>恢复</Button>
-          <Button variant="danger" onClick={() => props.setDeleting(props.backup)}>删除</Button>
-        </span>
-      </div>
-    </List.Item>
   );
 }
 
@@ -328,40 +240,6 @@ function SummaryGrid({ summary }: { readonly summary: DataSummary }) {
   );
 }
 
-function RestoreDialog(props: {
-  readonly backup?: BackupRecord;
-  readonly clear: () => void;
-  readonly setData: (data: AppData) => void;
-  readonly setMessage: (value: string) => void;
-}) {
-  return (
-    <ConfirmDialog
-      open={Boolean(props.backup)}
-      title="恢复备份"
-      description="恢复后会用该备份整体替换当前账本。"
-      onCancel={props.clear}
-      onConfirm={() => props.backup && restoreBackup(props.backup.id, props)}
-    />
-  );
-}
-
-function DeleteBackupDialog(props: {
-  readonly backup?: BackupRecord;
-  readonly clear: () => void;
-  readonly setBackups: (backups: readonly BackupRecord[]) => void;
-  readonly setMessage: (value: string) => void;
-}) {
-  return (
-    <ConfirmDialog
-      open={Boolean(props.backup)}
-      title="删除备份"
-      description="确认删除这个本地备份？"
-      onCancel={props.clear}
-      onConfirm={() => props.backup && removeBackup(props.backup.id, props)}
-    />
-  );
-}
-
 function confirmImport(props: {
   readonly preview?: ImportPreview;
   readonly clear: () => void;
@@ -374,48 +252,19 @@ function confirmImport(props: {
   props.clear();
 }
 
-function saveBackup(data: AppData, setBackups: (backups: readonly BackupRecord[]) => void, setMessage: (value: string) => void): void {
-  createBackup(data)
-    .then(() => refreshBackups(setBackups, setMessage))
-    .then(() => setMessage("备份已创建"))
-    .catch((error: unknown) => setMessage(error instanceof Error ? error.message : "创建备份失败"));
-}
-
-function restoreBackup(
-  id: string,
-  props: { readonly clear: () => void; readonly setData: (data: AppData) => void; readonly setMessage: (value: string) => void },
-): void {
-  readBackupData(id)
-    .then((preview) => props.setData(preview.data))
-    .then(() => props.setMessage("备份已恢复"))
-    .catch((error: unknown) => props.setMessage(error instanceof Error ? error.message : "恢复备份失败"))
-    .finally(props.clear);
-}
-
-function removeBackup(
-  id: string,
-  props: { readonly clear: () => void; readonly setBackups: (backups: readonly BackupRecord[]) => void; readonly setMessage: (value: string) => void },
-): void {
-  deleteBackup(id)
-    .then(() => refreshBackups(props.setBackups, props.setMessage))
-    .then(() => props.setMessage("备份已删除"))
-    .catch((error: unknown) => props.setMessage(error instanceof Error ? error.message : "删除备份失败"))
-    .finally(props.clear);
-}
-
-function refreshBackups(setBackups: (backups: readonly BackupRecord[]) => void, setMessage: (value: string) => void): void {
-  listBackups()
-    .then(setBackups)
-    .catch((error: unknown) => setMessage(error instanceof Error ? error.message : "读取备份失败"));
-}
-
 function clearData(
-  props: { readonly setData: (data: AppData) => void; readonly setMessage: (value: string) => void },
+  props: { readonly setData: (data: AppData | undefined) => void; readonly setMessage: (value: string) => void },
   setConfirmClear: (open: boolean) => void,
 ): void {
-  props.setData(initialData());
-  props.setMessage("数据已清空");
-  setConfirmClear(false);
+  clearStoredVault()
+    .then(() => {
+      clearRememberedDevice();
+      lockVault();
+      props.setData(undefined);
+      props.setMessage("数据已清空");
+      setConfirmClear(false);
+    })
+    .catch((error: unknown) => props.setMessage(error instanceof Error ? error.message : "清空数据失败"));
 }
 
 function downloadJson(json: string, filename: string): void {
@@ -425,9 +274,4 @@ function downloadJson(json: string, filename: string): void {
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
-}
-
-interface SyncImportPreview {
-  readonly preview: SyncSettingsPreview;
-  readonly passphrase: string;
 }

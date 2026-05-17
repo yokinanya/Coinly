@@ -16,39 +16,16 @@ describe("syncClient", () => {
     vi.useRealTimers();
   });
 
-  it("migrates legacy single target S3 settings to targets", () => {
-    const settings = normalizeSyncSettings({
-      enabled: true,
-      provider: "s3",
-      endpoint: "https://s3.example",
-      bucket: "coinly-backups",
-      objectKey: "snapshots/main.json",
-      username: "key-id",
-      accessKey: "secret",
-    });
-
-    expect(settings?.targets?.[0]).toMatchObject({
-      provider: "s3-compatible",
-      endpoint: "https://s3.example",
-      bucket: "coinly-backups",
-      objectKey: "snapshots/main.json",
-      accessKeyId: "key-id",
-      secretAccessKey: "secret",
-    });
-  });
-
-  it("normalizes multiple configured targets without primary backup fields", () => {
+  it("normalizes configured targets", () => {
     const settings = normalizeSyncSettings({
       enabled: true,
       targets: [
         s3Target({ forcePathStyle: true, bucket: "primary" }),
         { enabled: true, provider: "onedrive", endpoint: "", objectKey: "", accessToken: "token" },
       ],
-      primary: s3Target({ forcePathStyle: true, bucket: "legacy" }),
     });
 
     expect(settings?.targets).toHaveLength(2);
-    expect(settings?.primary).toBeUndefined();
     expect(settings?.targets?.[1].provider).toBe("onedrive");
   });
 
@@ -61,7 +38,7 @@ describe("syncClient", () => {
 
     const result = await syncData(data, {
       enabled: true,
-      primary: s3Target({ forcePathStyle: true }),
+      targets: [s3Target({ forcePathStyle: true })],
     });
 
     expect(result.status).toBe("uploaded");
@@ -86,7 +63,7 @@ describe("syncClient", () => {
 
     const result = await syncData(data, {
       enabled: true,
-      primary: s3Target({ forcePathStyle: true }),
+      targets: [s3Target({ forcePathStyle: true })],
     });
 
     expect(result.status).toBe("uploaded");
@@ -101,7 +78,7 @@ describe("syncClient", () => {
     });
   });
 
-  it("writes primary and backup targets before reporting success", async () => {
+  it("writes all enabled targets before reporting success", async () => {
     const data = initialData();
     const fetchMock = stubFetch([
       new Response("", { status: 404 }),
@@ -112,8 +89,10 @@ describe("syncClient", () => {
 
     const result = await syncData(data, {
       enabled: true,
-      primary: s3Target({ forcePathStyle: true, bucket: "primary" }),
-      backup: s3Target({ forcePathStyle: true, bucket: "backup" }),
+      targets: [
+        s3Target({ forcePathStyle: true, bucket: "primary" }),
+        s3Target({ forcePathStyle: true, bucket: "backup" }),
+      ],
     });
 
     expect(result.status).toBe("uploaded");
@@ -135,8 +114,10 @@ describe("syncClient", () => {
 
     await expect(syncData(data, {
       enabled: true,
-      primary: s3Target({ forcePathStyle: true, bucket: "primary" }),
-      backup: s3Target({ forcePathStyle: true, bucket: "backup" }),
+      targets: [
+        s3Target({ forcePathStyle: true, bucket: "primary" }),
+        s3Target({ forcePathStyle: true, bucket: "backup" }),
+      ],
     })).rejects.toThrow("写入失败");
   });
 
@@ -149,8 +130,10 @@ describe("syncClient", () => {
 
     await overwriteRemote(data, {
       enabled: true,
-      primary: s3Target({ forcePathStyle: true, bucket: "primary" }),
-      backup: s3Target({ forcePathStyle: true, bucket: "backup" }),
+      targets: [
+        s3Target({ forcePathStyle: true, bucket: "primary" }),
+        s3Target({ forcePathStyle: true, bucket: "backup" }),
+      ],
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);

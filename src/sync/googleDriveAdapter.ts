@@ -1,6 +1,6 @@
 import type { SyncTarget } from "../domain/types";
 import { CLOUD_SYNC_FILE_NAME } from "./syncDefaults";
-import { assertConditionalWriteResponse, readRemotePayloadResponse } from "./remotePayload";
+import { assertConditionalWriteResponse, assertDeleteResponse, readRemotePayloadResponse } from "./remotePayload";
 import { oauthClientId } from "./oauthConfig";
 import type { RemoteSnapshot } from "./syncTypes";
 
@@ -52,6 +52,19 @@ export async function writeGoogleDrive(target: SyncTarget, payload: string, vers
     ? await updateDriveFile(file.id, payload, token)
     : await createDriveFile(payload, token);
   assertConditionalWriteResponse(response, "Google Drive");
+}
+
+export async function deleteGoogleDrive(target: SyncTarget, version?: string): Promise<void> {
+  const token = requireAccessToken(target);
+  const file = await findDriveFile(token);
+  if (!file) return;
+  if (version && file.version !== version) {
+    throw new Error("Google Drive 远端已发生变化，请重新同步后再删除");
+  }
+  const response = await googleFetch(`${DRIVE_API_ROOT}/files/${encodeURIComponent(file.id)}`, token, {
+    method: "DELETE",
+  });
+  assertDeleteResponse(response, "Google Drive");
 }
 
 export async function testGoogleDrive(target: SyncTarget): Promise<"found" | "missing"> {
