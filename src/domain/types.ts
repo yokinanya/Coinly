@@ -125,6 +125,8 @@ export interface AiSettings {
   readonly endpoint: string;
   readonly model: string;
   readonly apiKey: string;
+  readonly contextTokenBudget?: number;
+  readonly supportsVision?: boolean;
 }
 
 export interface UiSettings {

@@ -1,6 +1,7 @@
 import { Camera, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { createAiProvider } from "../ai/provider";
+import { resolveAiModelCapabilities } from "../ai/modelCapabilities";
 import { validateTransactionDraft } from "../ai/validation";
 import { createTransaction } from "../domain/factory";
 import { upsertTransaction, validateTransactionDraft as validateDraft } from "../domain/operations";
@@ -51,6 +52,7 @@ function AiPanel(props: {
 }) {
   const [state, setState] = useState<AiState>({ tone: "idle", text: "" });
   const pending = state.tone === "loading";
+  const supportsVision = props.data.aiSettings ? resolveAiModelCapabilities(props.data.aiSettings).supportsVision : false;
   const parseText = () => runAi(() => createAiProvider(props.data.aiSettings).parseText(props.text, props.data), props, setState);
   const parseImage = (file: File) => {
     runAi(() => createAiProvider(props.data.aiSettings).parseImage(file, props.data), props, setState);
@@ -63,10 +65,11 @@ function AiPanel(props: {
       <AiMessage state={state} />
       <div className="flex flex-wrap gap-2">
         <Button loading={pending} disabled={pending} onClick={parseText}><Sparkles size={16} />解析文本</Button>
-        <Upload accept="image/*" beforeUpload={parseImage} maxCount={1} showUploadList={false}>
-          <Button loading={pending} disabled={pending} icon={<Camera size={16} />}>解析图片</Button>
+        <Upload accept="image/*" beforeUpload={parseImage} disabled={!supportsVision} maxCount={1} showUploadList={false}>
+          <Button loading={pending} disabled={pending || !supportsVision} icon={<Camera size={16} />}>解析图片</Button>
         </Upload>
       </div>
+      {!supportsVision && <p className="text-xs text-[var(--color-text-secondary)]">当前 AI 模型不支持图片解析，请在设置中更换多模态模型或手动开启图片能力。</p>}
     </div>
   );
 }

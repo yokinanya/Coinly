@@ -20,6 +20,7 @@ import { bootstrapVault, submitVault } from "./vaultStartup";
 const EMPTY_SYNC_SETTINGS: SyncSettings = { enabled: true, targets: [] };
 const AUTO_SYNC_DELAY_MS = 60_000;
 const AccountsView = lazy(() => import("./AccountsView").then((module) => ({ default: module.AccountsView })));
+const AnalysisView = lazy(() => import("./AnalysisView").then((module) => ({ default: module.AnalysisView })));
 const BudgetView = lazy(() => import("./BudgetView").then((module) => ({ default: module.BudgetView })));
 const CategoriesView = lazy(() => import("./CategoriesView").then((module) => ({ default: module.CategoriesView })));
 const DashboardView = lazy(() => import("./DashboardView").then((module) => ({ default: module.DashboardView })));
@@ -203,6 +204,7 @@ function renderView(options: {
   if (options.viewId === "accounts") return <AccountsView {...props} />;
   if (options.viewId === "budget") return <BudgetView {...props} />;
   if (options.viewId === "stats") return <StatsView data={options.data} onFilter={(filter) => navigateToTransactions(filter, options.setViewId)} />;
+  if (options.viewId === "analysis") return <AnalysisView data={options.data} />;
   if (options.viewId === "categories") return <CategoriesView {...props} />;
   if (options.viewId === "recurring") return <RecurringView {...props} />;
   if (options.viewId === "settings") return <SettingsView data={options.data} token={options.token} setData={options.setData} setVaultData={options.setVaultData} />;

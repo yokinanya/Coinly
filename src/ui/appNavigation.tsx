@@ -1,4 +1,4 @@
-import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, PieChart, Settings, Tags, Wallet, X } from "lucide-react";
+import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, PieChart, Settings, Sparkles, Tags, Wallet, X } from "lucide-react";
 import type { Key } from "react";
 import { useMemo, useState } from "react";
 import { pushViewPath, type ViewId } from "./appRoutes";
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { id: "accounts", label: "账户", icon: Wallet },
   { id: "budget", label: "预算", icon: PieChart },
   { id: "stats", label: "统计", icon: BarChart3 },
+  { id: "analysis", label: "AI 分析", icon: Sparkles },
   { id: "categories", label: "分类", icon: Tags },
   { id: "recurring", label: "订阅", icon: CalendarClock },
   { id: "settings", label: "设置", icon: Settings },

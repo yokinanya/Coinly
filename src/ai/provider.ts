@@ -1,22 +1,15 @@
-import { TRANSACTION_KINDS } from "../domain/constants";
 import type { AiSettings, AppData, TransactionDraft } from "../domain/types";
+import { analysisScopeLabel, buildAnalysisContext, buildDraftSystemPrompt, type AnalysisScope } from "./context";
+import { resolveAiModelCapabilities } from "./modelCapabilities";
 
 export interface AiProvider {
   parseText(input: string, data: AppData): Promise<TransactionDraft>;
   parseImage(image: File, data: AppData): Promise<TransactionDraft>;
-  analyze(data: AppData): Promise<string>;
+  analyze(data: AppData, options?: { readonly scope?: AnalysisScope }): Promise<string>;
 }
 
 export function buildAnalysisInput(data: AppData): string {
-  const now = new Date();
-  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  return JSON.stringify({
-    month,
-    transactions: data.transactions,
-    budgets: data.budgets,
-    categories: data.categories,
-    tags: data.tags,
-  });
+  return JSON.stringify(buildAnalysisContext(data, { settings: requireAiSettings(data.aiSettings) }));
 }
 
 interface ChatResponse {
@@ -39,15 +32,16 @@ class OpenAiCompatibleProvider implements AiProvider {
 
   async parseText(input: string, data: AppData): Promise<TransactionDraft> {
     return requestDraft(this.settings, [
-      systemPrompt(data),
+      buildDraftSystemPrompt(data, { settings: this.settings, input }),
       { role: "user", content: `解析这条记账文本，只返回 TransactionDraft JSON：${input}` },
     ]);
   }
 
   async parseImage(image: File, data: AppData): Promise<TransactionDraft> {
+    assertVisionSupported(this.settings);
     const dataUrl = await readAsDataUrl(image);
     return requestDraft(this.settings, [
-      systemPrompt(data),
+      buildDraftSystemPrompt(data, { settings: this.settings }),
       {
         role: "user",
         content: [
@@ -58,41 +52,52 @@ class OpenAiCompatibleProvider implements AiProvider {
     ]);
   }
 
-  async analyze(data: AppData): Promise<string> {
+  async analyze(data: AppData, options: { readonly scope?: AnalysisScope } = {}): Promise<string> {
+    const scope = options.scope ?? "current-month";
     const response = await requestChat(this.settings, [
-      { role: "system", content: "你是个人记账分析助手，基于数据给出简洁建议。" },
-      { role: "user", content: buildAnalysisInput(data) },
+      { role: "system", content: analysisPrompt(analysisScopeLabel(scope)) },
+      { role: "user", content: JSON.stringify(buildAnalysisContext(data, { settings: this.settings, analysisScope: scope })) },
     ]);
     return response.choices[0]?.message?.content ?? "";
   }
 }
 
 export function systemPrompt(data: AppData): Record<string, string> {
-  return {
-    role: "system",
-    content: [
-      "你是 Coinly 的记账解析器。只输出一个合法 JSON 对象，不要 Markdown，不要解释。",
-      "JSON 必须符合 TransactionDraft：kind, accountId, amount, currency, occurredAt, tagIds, note 为必填字段。",
-      `kind 只能从这些枚举中选择：${TRANSACTION_KINDS.join(", ")}。不要输出中文类型，不要发明新类型。`,
-      "常见映射：消费/付款/买东西=expense，工资/收款=income，退款/退货=refund，转账=transfer，信用卡还款=credit_payment。",
-      "accountId 必须使用下方账户的 id；categoryId 必须使用下方分类的 id；tagIds 必须是标签 id 数组，没有标签时输出 []。",
-      "currency 必须使用当前账本币种代码；occurredAt 只输出日期，不要输出具体时间；amount 必须是正数。",
-      "无法确定分类或标签时省略 categoryId 或使用空 tagIds，不要输出不存在的名称。",
-      `当前日期：${new Date().toISOString()}`,
-      `币种：${JSON.stringify(data.currencies)}`,
-      `账户：${JSON.stringify(selectableItems(data.accounts))}`,
-      `分类：${JSON.stringify(selectableCategories(data))}`,
-      `标签：${JSON.stringify(selectableItems(data.tags))}`,
-    ].join("\n"),
+  return buildDraftSystemPrompt(data, { settings: requireAiSettings(data.aiSettings) });
+}
+
+function requireAiSettings(settings?: AiSettings): AiSettings {
+  return settings ?? {
+    provider: "openai-compatible",
+    endpoint: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
+    apiKey: "",
   };
 }
 
-function selectableItems(items: readonly { readonly id: string; readonly name: string }[]) {
-  return items.map((item) => ({ id: item.id, name: item.name }));
+function assertVisionSupported(settings: AiSettings): void {
+  if (!resolveAiModelCapabilities(settings).supportsVision) {
+    throw new Error("当前 AI 模型不支持图片解析，请在设置中更换多模态模型或手动开启图片能力");
+  }
 }
 
-function selectableCategories(data: AppData) {
-  return data.categories.map((item) => ({ id: item.id, name: item.name, direction: item.direction }));
+function analysisPrompt(scopeLabel: string): string {
+  return [
+    "你是 Coinly 的个人记账智能洞察助手，只基于用户提供的聚合上下文分析，不要编造数据。",
+    `分析范围是“${scopeLabel}”。输出简洁中文 Markdown，使用这些小标题：${scopeLabel}概览、异常/风险、预算关注、趋势解释、行动建议。`,
+    "异常/风险只写真实需要用户关注的消费波动、预算超支、分类结构问题；没有明确问题时写“暂无明确风险”。",
+    "没有跨期对比数据时，不要声称结构稳定、改善、恶化或趋势明确；只能描述当前范围内的事实。",
+    "只有存在重复交易或订阅规则证据时，才称某项支出为固定支出、周期支出或订阅支出。",
+    "不要把币种汇总说成账户汇总；没有账户维度数据时不要写“CNY 账户”“USD 账户”。",
+    "不要把商户名称或备注直接推断为分类是否缺失；只有 categoryId 为空时才建议补分类。",
+    "涉及金额时必须带币种代码或币种名称，避免只写裸数字。",
+    "不要分析多币种汇率风险，不要给外汇、汇率波动或换汇建议。",
+    "不要做交易性质确认，不要讨论交易是否真实、是否完成、是否待核实；已录入交易一律视为已完成事实。",
+    "报表中的负支出代表退款或支出抵扣；不要把退款或负支出列为异常，不要建议把退款改成收入。",
+    "不要输出“符合统计口径”“符合 Coinly 的统计口径”“正常的退款”等规则解释式措辞；必要时只写“退款/抵扣减少了支出”。",
+    "行动建议只能基于 Coinly 现有能力：分类、标签、预算、订阅规则、账期；不要提不存在或不精确的能力，例如预算提醒。",
+    "只提供只读建议，不要声称已经创建、修改或删除任何交易、预算、订阅规则；建议不超过 3 条。",
+  ].join("\n");
 }
 
 async function requestDraft(settings: AiSettings, messages: readonly unknown[]): Promise<TransactionDraft> {

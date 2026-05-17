@@ -1,9 +1,8 @@
-import { BarChart3, ReceiptText } from "lucide-react";
+import { ReceiptText } from "lucide-react";
 import { useMemo, useState } from "react";
 import { deleteTransaction, upsertTransaction } from "../domain/operations";
 import { bumpVersion, createTransaction } from "../domain/factory";
 import type { AppData, Transaction, TransactionDraft } from "../domain/types";
-import { AnalysisDrawer } from "./AnalysisView";
 import { ConfirmDialog, ErrorBanner, PageHeader } from "./common";
 import { CreditStatementsDrawer } from "./CreditStatementsView";
 import { TRANSACTION_KIND_LABELS } from "./labels";
@@ -17,7 +16,6 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
   const [editing, setEditing] = useState<Transaction>();
   const [refunding, setRefunding] = useState<TransactionDraft>();
   const [deleting, setDeleting] = useState<Transaction>();
-  const [analysisOpen, setAnalysisOpen] = useState(false);
   const [statementsOpen, setStatementsOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
@@ -37,7 +35,6 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
         title="明细"
         actions={(
           <>
-            <Button onClick={() => setAnalysisOpen(true)}><BarChart3 size={16} />分析</Button>
             <Button onClick={() => setStatementsOpen(true)}><ReceiptText size={16} />账期</Button>
             <Button variant="danger" disabled={selectedVisibleCount === 0} onClick={() => setBatchConfirmOpen(true)}>批量删除 {selectedVisibleCount || ""}</Button>
           </>
@@ -81,7 +78,6 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
         onCancel={() => setBatchConfirmOpen(false)}
         onConfirm={() => deleteSelectedIds(props, visibleSelectedIds(selectedIds, filteredTransactions), setSelectedIds, setBatchConfirmOpen)}
       />
-      <AnalysisDrawer open={analysisOpen} data={props.data} onClose={() => setAnalysisOpen(false)} />
       <CreditStatementsDrawer open={statementsOpen} data={props.data} setData={props.setData} onClose={() => setStatementsOpen(false)} />
     </section>
   );

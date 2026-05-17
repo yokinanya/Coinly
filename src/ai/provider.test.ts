@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { initialData } from "../domain/factory";
-import { buildAnalysisInput, chatCompletionsUrl, parseDraftContent, systemPrompt } from "./provider";
+import { buildAnalysisInput, chatCompletionsUrl, createAiProvider, parseDraftContent, systemPrompt } from "./provider";
 
 describe("buildAnalysisInput", () => {
-  it("includes local transaction and budget data", () => {
+  it("includes aggregated ledger context without full transactions", () => {
     const input = JSON.parse(buildAnalysisInput(initialData())) as Record<string, unknown>;
 
-    expect(input).toHaveProperty("transactions");
+    expect(input).toHaveProperty("selectedRange");
     expect(input).toHaveProperty("budgets");
-    expect(input).toHaveProperty("categories");
+    expect(input).not.toHaveProperty("transactions");
+    expect(input).toHaveProperty("contextMeta");
   });
 });
 
@@ -21,6 +22,19 @@ describe("systemPrompt", () => {
     expect(content).toContain("不要输出中文类型");
     expect(content).toContain("tagIds 必须是标签 id 数组");
     expect(content).toContain("不要输出具体时间");
+  });
+});
+
+describe("parseImage", () => {
+  it("rejects image parsing when the configured model does not support vision", async () => {
+    const provider = createAiProvider({
+      provider: "openai-compatible",
+      endpoint: "https://api.openai.com/v1",
+      model: "deepseek-chat",
+      apiKey: "key",
+    });
+
+    await expect(provider.parseImage(new File([""], "receipt.png"), initialData())).rejects.toThrow("不支持图片解析");
   });
 });
 

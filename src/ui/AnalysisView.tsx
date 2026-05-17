@@ -1,21 +1,41 @@
+import { Sparkles } from "lucide-react";
 import { useState } from "react";
+import type { AnalysisScope } from "../ai/context";
 import type { AppData } from "../domain/types";
 import { runAiAnalysis } from "./analysisActions";
-import { ErrorBanner } from "./common";
-import { Button, Drawer } from "./metis";
+import { ErrorBanner, PageHeader, SelectField } from "./common";
+import type { FormOption } from "./common";
+import { MarkdownContent } from "./MarkdownContent";
+import { Button } from "./metis";
 
-const ANALYSIS_DRAWER_WIDTH = 560;
+const ANALYSIS_SCOPE_OPTIONS: readonly FormOption[] = [
+  { value: "current-month", label: "本月" },
+  { value: "last-3-months", label: "近 3 个月" },
+  { value: "last-6-months", label: "近 6 个月" },
+  { value: "year-to-date", label: "今年" },
+];
 
-export function AnalysisDrawer(props: { readonly open: boolean; readonly data: AppData; readonly onClose: () => void }) {
+export function AnalysisView(props: { readonly data: AppData }) {
+  const [scope, setScope] = useState<AnalysisScope>("current-month");
   const [aiText, setAiText] = useState("");
   const [aiError, setAiError] = useState("");
+  const [pending, setPending] = useState(false);
+  const run = () => runAiAnalysis({ data: props.data, scope, setAiText, setAiError, setPending });
+
   return (
-    <Drawer open={props.open} title="分析" width={ANALYSIS_DRAWER_WIDTH} onClose={props.onClose}>
-      <div className="space-y-4">
-        <Button variant="primary" onClick={() => runAiAnalysis(props.data, setAiText, setAiError)}>生成分析</Button>
+    <section className="space-y-5">
+      <PageHeader title="AI 分析" />
+      <div className="panel max-w-3xl space-y-4 p-4">
+        <div className="grid gap-4 sm:grid-cols-[minmax(12rem,18rem)_auto] sm:items-end">
+          <SelectField label="分析范围" value={scope} options={ANALYSIS_SCOPE_OPTIONS} onChange={(value) => setScope(value as AnalysisScope)} />
+          <Button variant="primary" loading={pending} disabled={pending} onClick={run}>
+            <Sparkles size={16} />
+            分析账单
+          </Button>
+        </div>
         <ErrorBanner message={aiError} />
-        {aiText && <pre className="row-card whitespace-pre-wrap p-3 text-sm">{aiText}</pre>}
+        {aiText && <MarkdownContent content={aiText} />}
       </div>
-    </Drawer>
+    </section>
   );
 }
