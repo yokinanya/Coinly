@@ -1,4 +1,3 @@
-import { statementTransactions } from "./statements";
 import type { AppData, CurrencyCode, Transaction } from "./types";
 
 export interface CurrencySummary {
@@ -50,10 +49,7 @@ export interface ReportEntry {
 }
 
 export function reportEntries(data: AppData): readonly ReportEntry[] {
-  return [
-    ...data.transactions.flatMap((transaction) => transactionEntry(data, transaction)),
-    ...settledStatementEntries(data),
-  ];
+  return data.transactions.flatMap(transactionEntry);
 }
 
 export function summarizeByCurrency(entries: readonly ReportEntry[]): readonly CurrencySummary[] {
@@ -204,8 +200,8 @@ function matchesBudget(
   return entry.kind === "expense" && categoryMatches && tagMatches;
 }
 
-function transactionEntry(data: AppData, transaction: Transaction): readonly ReportEntry[] {
-  if (!shouldUseTransaction(data, transaction)) return [];
+function transactionEntry(transaction: Transaction): readonly ReportEntry[] {
+  if (!shouldUseTransaction(transaction)) return [];
   if (transaction.kind === "refund") return refundEntry(transaction);
   return [{
     kind: transaction.kind,
@@ -228,36 +224,6 @@ function refundEntry(transaction: Transaction): readonly ReportEntry[] {
   }];
 }
 
-function shouldUseTransaction(data: AppData, transaction: Transaction): transaction is Transaction & { readonly kind: "income" | "expense" | "refund" } {
-  if (transaction.kind !== "income" && transaction.kind !== "expense" && transaction.kind !== "refund") return false;
-  const account = data.accounts.find((item) => item.id === transaction.accountId);
-  return account?.kind !== "credit" || transaction.kind === "refund";
-}
-
-function settledStatementEntries(data: AppData): readonly ReportEntry[] {
-  return data.statements.flatMap((statement) => {
-    if (!statement.paid || !statement.settlementAmount || !statement.settlementCurrency || !statement.settledAt) {
-      return [];
-    }
-    return allocateStatementAmount(data, statement);
-  });
-}
-
-function allocateStatementAmount(data: AppData, statement: AppData["statements"][number]): readonly ReportEntry[] {
-  const transactions = statementTransactions(data.transactions, statement);
-  const total = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const amount = statement.settlementAmount;
-  const currency = statement.settlementCurrency;
-  const occurredAt = statement.settledAt;
-  if (total <= 0 || !amount || !currency || !occurredAt) {
-    return [];
-  }
-  return transactions.map((transaction) => ({
-    kind: "expense",
-    amount: amount * (transaction.amount / total),
-    currency,
-    occurredAt,
-    categoryId: transaction.categoryId,
-    tagIds: transaction.tagIds,
-  }));
+function shouldUseTransaction(transaction: Transaction): transaction is Transaction & { readonly kind: "income" | "expense" | "refund" } {
+  return transaction.kind === "income" || transaction.kind === "expense" || transaction.kind === "refund";
 }

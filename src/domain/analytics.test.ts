@@ -17,30 +17,34 @@ describe("summarizeByCurrency", () => {
     ]);
   });
 
-  it("excludes unbilled credit expenses from report entries", () => {
+  it("includes credit expenses by original currency before settlement", () => {
     const data = creditFixture(false);
 
-    expect(summarizeByCurrency(reportEntries(data))).toEqual([]);
+    expect(summarizeByCurrency(reportEntries(data))).toEqual([
+      { currency: "HKD", income: 0, expense: 10 },
+      { currency: "USD", income: 0, expense: 30 },
+    ]);
   });
 
-  it("allocates settled credit statements into the settlement currency", () => {
+  it("keeps settled credit statements in original transaction currencies", () => {
     const data = creditFixture(true);
 
     expect(summarizeByCurrency(reportEntries(data))).toEqual([
-      { currency: "CNY", income: 0, expense: 140 },
+      { currency: "HKD", income: 0, expense: 10 },
+      { currency: "USD", income: 0, expense: 30 },
     ]);
     expect(summarizeByCategory(data)).toEqual([
-      { categoryId: "food", currency: "CNY", amount: 105 },
-      { categoryId: "travel", currency: "CNY", amount: 35 },
+      { categoryId: "food", currency: "USD", amount: 30 },
+      { categoryId: "travel", currency: "HKD", amount: 10 },
     ]);
   });
 
-  it("allocates settled credit statements into budget and tag summaries", () => {
+  it("uses original credit transaction currencies in budget and tag summaries", () => {
     const data = creditFixture(true);
 
-    expect(spendingForBudget(data, "food-budget")).toBe(105);
+    expect(spendingForBudget(data, "food-budget")).toBe(30);
     expect(summarizeByCurrency(reportEntries(data).filter((entry) => entry.tagIds.includes("daily")))).toEqual([
-      { currency: "CNY", income: 0, expense: 105 },
+      { currency: "USD", income: 0, expense: 30 },
     ]);
   });
 
@@ -60,11 +64,11 @@ describe("summarizeByCurrency", () => {
     ]);
   });
 
-  it("summarizes tags using settled statement entries", () => {
+  it("summarizes tags using original credit transaction entries", () => {
     const data = creditFixture(true);
 
     expect(summarizeByTag(data)).toEqual([
-      { tagId: "daily", currency: "CNY", amount: 105 },
+      { tagId: "daily", currency: "USD", amount: 30 },
     ]);
   });
 
@@ -95,7 +99,7 @@ describe("summarizeByCurrency", () => {
 
   it("builds a reusable report index matching standalone summaries", () => {
     const data = creditFixture(true);
-    const now = new Date("2026-02-15T00:00:00.000Z");
+    const now = new Date("2026-01-15T00:00:00.000Z");
     const entries = reportEntries(data);
     const index = buildReportIndex(data, { now, trendMonths: 2 });
 
@@ -107,7 +111,7 @@ describe("summarizeByCurrency", () => {
     expect(index.monthlyTrends).toEqual(monthlyTrends(data, 2, now));
   });
 
-  it("indexes tag spending across multiple tags, currencies, refunds, and statements", () => {
+  it("indexes tag spending across multiple tags, currencies, refunds, and credit transactions", () => {
     const base = creditFixture(true);
     const cash = { ...base.accounts[0], id: "cash", kind: "cash" as const };
     const data = {
@@ -122,8 +126,23 @@ describe("summarizeByCurrency", () => {
     };
 
     expect(buildReportIndex(data, { now: new Date("2026-02-15T00:00:00.000Z") }).tagSummary).toEqual([
-      { tagId: "daily", currency: "CNY", amount: 105 },
       { tagId: "daily", currency: "USD", amount: 15 },
+    ]);
+  });
+
+  it("shows current month JPY credit expenses in the currency summary", () => {
+    const base = initialData();
+    const card = { ...base.accounts[0], id: "card", kind: "credit" as const, currency: "JPY" };
+    const data = {
+      ...base,
+      accounts: [card],
+      transactions: [
+        { ...makeTransaction("card", 1200, "JPY", "expense"), occurredAt: "2026-05-10T00:00:00.000Z" },
+      ],
+    };
+
+    expect(buildReportIndex(data, { now: new Date("2026-05-20T00:00:00.000Z") }).currencySummary).toEqual([
+      { currency: "JPY", income: 0, expense: 1200 },
     ]);
   });
 });
@@ -131,7 +150,7 @@ describe("summarizeByCurrency", () => {
 function makeTransaction(
   accountId: string,
   amount: number,
-  currency: "CNY" | "USD" | "HKD",
+  currency: "CNY" | "USD" | "HKD" | "JPY",
   kind: "income" | "expense",
 ): Transaction {
   return {
