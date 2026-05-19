@@ -2,7 +2,7 @@ import { useState } from "react";
 import { RECURRING_INTERVALS } from "../../domain/constants";
 import { createBase, upsertEntity } from "../../domain/operations";
 import { accountCurrencyOptions, currencyForAccount, defaultNextRunAt, earliestAllowedStartAt, validateRecurringRule } from "../../domain/recurring";
-import type { Account, CurrencyCode, RecurringRule } from "../../domain/types";
+import type { Account, AppData, CurrencyCode, RecurringRule } from "../../domain/types";
 import { ConfirmDialog, DateField, EmptyState, TextAreaField } from "../common";
 import { money } from "../format";
 import { ACCOUNT_KIND_LABELS, RECURRING_INTERVAL_LABELS } from "../labels";
@@ -53,6 +53,7 @@ export function RecurringRuleManager({ data, setData, setMessage }: ManagerProps
         <SelectField label="支付方式" value={draft.transaction.accountId} options={data.accounts.map((item) => item.id)} labels={accountLabels(data.accounts)} onChange={(accountId) => setDraft(changeAccount(draft, data.accounts, accountId))} />
         <SelectField label="支付币种" value={draft.transaction.currency} options={currencyOptions(data.accounts, draft.transaction.accountId)} onChange={(currency) => setDraft({ ...draft, transaction: { ...draft.transaction, currency: currency as CurrencyCode } })} />
         <Field label="金额" value={draft.transaction.amount} onChange={(amount) => setDraft({ ...draft, transaction: { ...draft.transaction, amount: Number(amount) } })} />
+        <SelectField label="分类" value={draft.transaction.categoryId ?? ""} options={categoryOptions(data)} labels={categoryLabels(data)} onChange={(categoryId) => setDraft({ ...draft, transaction: { ...draft.transaction, categoryId: categoryId || undefined } })} />
         <div className="py-0.5">
           <TextAreaField label="备注" value={draft.transaction.note} onChange={(note) => setDraft({ ...draft, transaction: { ...draft.transaction, note } })} />
         </div>
@@ -138,6 +139,14 @@ function accountLabels(accounts: readonly Account[]): Record<string, string> {
     account.id,
     `${account.name} · ${ACCOUNT_KIND_LABELS[account.kind]}`,
   ]));
+}
+
+function categoryOptions(data: AppData): readonly string[] {
+  return ["", ...data.categories.filter((item) => item.direction === "expense").map((item) => item.id)];
+}
+
+function categoryLabels(data: AppData): Record<string, string> {
+  return Object.fromEntries(data.categories.map((category) => [category.id, category.name]));
 }
 
 function currencyOptions(

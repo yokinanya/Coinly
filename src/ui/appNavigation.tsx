@@ -1,4 +1,4 @@
-import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, PieChart, Settings, Sparkles, Tags, Wallet, X } from "lucide-react";
+import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, PieChart, PlusCircle, Settings, Sparkles, Tags, Wallet, X } from "lucide-react";
 import type { Key } from "react";
 import { useMemo, useState } from "react";
 import { pushViewPath, type ViewId } from "./appRoutes";
@@ -9,6 +9,7 @@ const DRAWER_WIDTH = 280;
 
 const NAV_ITEMS = [
   { id: "home", label: "首页", icon: Home },
+  { id: "entry", label: "记账", icon: PlusCircle },
   { id: "transactions", label: "明细", icon: List },
   { id: "accounts", label: "账户", icon: Wallet },
   { id: "budget", label: "预算", icon: PieChart },
@@ -31,7 +32,7 @@ export function NavigationSidebar(props: {
   };
   return (
     <>
-      <MobileHeader openMenu={() => setMobileOpen(true)} />
+      <MobileHeader openMenu={() => setMobileOpen(true)} goHome={() => select("home")} />
       <Layout.Sider className="fixed inset-y-0 left-0 z-20 hidden border-r border-[var(--color-border)] bg-[var(--color-surface)] md:block" width={SIDEBAR_WIDTH}>
         <SidebarContent items={items} viewId={props.viewId} onSelect={select} />
       </Layout.Sider>
@@ -50,10 +51,10 @@ export function NavigationSidebar(props: {
   );
 }
 
-function MobileHeader(props: { readonly openMenu: () => void }) {
+function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: () => void }) {
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-[var(--safe-top)] md:hidden">
-      <h1 className="text-lg font-semibold leading-none text-[var(--color-text)]">Coinly</h1>
+      <button className="text-lg font-semibold leading-none text-[var(--color-text)]" type="button" onClick={props.goHome}>Coinly</button>
       <button
         className="grid h-10 w-10 place-items-center rounded-md text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-muted)]"
         type="button"
@@ -78,7 +79,7 @@ function SidebarContent(props: {
   return (
     <div className={`flex h-full min-h-0 flex-col bg-[var(--color-surface)] ${paddingClass}`}>
       <div className="flex min-h-12 items-center justify-between px-2 pb-4">
-        <h1 className={`${props.compact ? "text-lg" : "text-2xl"} font-semibold text-[var(--color-text)]`}>Coinly</h1>
+        <button className={`${props.compact ? "text-lg" : "text-2xl"} font-semibold text-[var(--color-text)]`} type="button" onClick={() => selectHome(props)}>Coinly</button>
         {props.compact && (
           <button
             className="grid h-9 w-9 place-items-center rounded-md text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-muted)]"
@@ -112,6 +113,11 @@ function useNavigationItems() {
       })),
     [],
   );
+}
+
+function selectHome(props: Pick<Parameters<typeof SidebarContent>[0], "onSelect" | "onClose">): void {
+  props.onSelect("home");
+  props.onClose?.();
 }
 
 function selectView(id: ViewId, setViewId: (id: ViewId) => void) {

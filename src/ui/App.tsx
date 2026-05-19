@@ -1,4 +1,3 @@
-import { Plus } from "lucide-react";
 import type { MutableRefObject } from "react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppData, SyncSettings, ThemeMode } from "../domain/types";
@@ -24,7 +23,7 @@ const AnalysisView = lazy(() => import("./AnalysisView").then((module) => ({ def
 const BudgetView = lazy(() => import("./BudgetView").then((module) => ({ default: module.BudgetView })));
 const CategoriesView = lazy(() => import("./CategoriesView").then((module) => ({ default: module.CategoriesView })));
 const DashboardView = lazy(() => import("./DashboardView").then((module) => ({ default: module.DashboardView })));
-const EntryDialog = lazy(() => import("./EntryView").then((module) => ({ default: module.EntryDialog })));
+const EntryView = lazy(() => import("./EntryView").then((module) => ({ default: module.EntryView })));
 const RecurringView = lazy(() => import("./RecurringView").then((module) => ({ default: module.RecurringView })));
 const SettingsView = lazy(() => import("./SettingsView").then((module) => ({ default: module.SettingsView })));
 const StatsView = lazy(() => import("./StatsView").then((module) => ({ default: module.StatsView })));
@@ -36,7 +35,6 @@ export function App() {
   const saveTokenRef = useRef<SaveToken>({ version: 0 });
   const [saveToken, setSaveToken] = useState<SaveToken>({ version: 0 });
   const [viewId, setViewId] = useState<ViewId>(() => viewFromPath(window.location.pathname));
-  const [entryOpen, setEntryOpen] = useState(false);
   const [syncResolution, setSyncResolution] = useState<SyncResolution>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "info", text: "正在加载本地账本" });
   const syncTimerRef = useRef<number | undefined>(undefined);
@@ -82,7 +80,7 @@ export function App() {
     applyTheme(data?.uiSettings?.theme ?? "system");
   }, [data?.uiSettings?.theme]);
 
-  const content = useMemo(() => renderView({ viewId, data, token: saveToken, setData, setVaultData, setStatus, setViewId }), [viewId, data, saveToken, setData, setVaultData]);
+  const content = useMemo(() => renderView({ viewId, data, token: saveToken, setData, setVaultData, setStatus, setViewId }), [viewId, data, saveToken, setData, setVaultData, setStatus]);
 
   if (!data) {
     if (storedVault) {
@@ -112,20 +110,6 @@ export function App() {
           <PageTransition key={viewId}>{content}</PageTransition>
         </Suspense>
       </main>
-      <button
-        className="fixed bottom-[calc(var(--safe-bottom)+1rem)] right-[max(1rem,var(--safe-right))] z-30 grid h-14 w-14 place-items-center rounded-full bg-[var(--color-accent)] text-white shadow-lg transition hover:bg-[var(--color-accent-hover)] md:bottom-6"
-        type="button"
-        aria-label="记账"
-        title="记账"
-        onClick={() => setEntryOpen(true)}
-      >
-        <Plus size={24} />
-      </button>
-      {entryOpen && (
-        <Suspense fallback={null}>
-          <EntryDialog open={entryOpen} data={data} setData={setVaultData} setStatus={setStatus} onClose={() => setEntryOpen(false)} />
-        </Suspense>
-      )}
       <SyncResolutionPanel
         resolution={syncResolution}
         data={data}
@@ -200,6 +184,7 @@ function renderView(options: {
     return null;
   }
   const props = { data: options.data, setData: options.setVaultData };
+  if (options.viewId === "entry") return <EntryView data={options.data} setData={options.setVaultData} setStatus={options.setStatus} />;
   if (options.viewId === "transactions") return <TransactionsView {...props} />;
   if (options.viewId === "accounts") return <AccountsView {...props} />;
   if (options.viewId === "budget") return <BudgetView {...props} />;

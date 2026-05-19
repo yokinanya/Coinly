@@ -2,6 +2,7 @@ import { reportEntries } from "./analytics";
 import type { ReportEntry } from "./analytics";
 import { DAY_MAX, DAY_MIN } from "./constants";
 import { bumpVersion, createId, nowIso, touchEntity } from "./factory";
+import { accountCurrencyOptions } from "./recurring";
 import type {
   Account,
   AppData,
@@ -92,6 +93,7 @@ export function validateTransactionDraft(data: AppData, draft: TransactionDraft)
     ...validateAmount(draft),
     ...validateDate(draft.occurredAt),
     ...validateAccount(data, draft.accountId),
+    ...validateCurrency(data, draft.accountId, draft.currency, "交易币种与账户不匹配"),
     ...validateCategory(data.categories, draft),
     ...validateTransfer(data, draft),
     ...validateCreditPayment(data, draft),
@@ -263,6 +265,19 @@ function validateAccount(data: AppData, accountId: string): readonly string[] {
   return data.accounts.some((account) => account.id === accountId) ? [] : ["账户不存在"];
 }
 
+function validateCurrency(
+  data: AppData,
+  accountId: string,
+  currency: CurrencyCode | undefined,
+  message: string,
+): readonly string[] {
+  const account = data.accounts.find((item) => item.id === accountId);
+  if (!account || !currency) {
+    return [];
+  }
+  return accountCurrencyOptions(account).includes(currency) ? [] : [message];
+}
+
 function validateCategory(categories: readonly Category[], draft: TransactionDraft): readonly string[] {
   if (!draft.categoryId || draft.kind === "transfer") {
     return [];
@@ -288,7 +303,10 @@ function validateTransfer(data: AppData, draft: TransactionDraft): readonly stri
   if (draft.relatedAccountId === draft.accountId) {
     return ["目标账户不能与源账户相同"];
   }
-  return data.accounts.some((account) => account.id === draft.relatedAccountId) ? [] : ["目标账户不存在"];
+  if (!data.accounts.some((account) => account.id === draft.relatedAccountId)) {
+    return ["目标账户不存在"];
+  }
+  return validateCurrency(data, draft.relatedAccountId, draft.targetCurrency, "转入币种与目标账户不匹配");
 }
 
 function validateCreditPayment(data: AppData, draft: TransactionDraft): readonly string[] {

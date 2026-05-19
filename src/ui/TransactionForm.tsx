@@ -1,4 +1,5 @@
 import { TRANSACTION_KINDS } from "../domain/constants";
+import { accountCurrencyOptions, currencyForAccount } from "../domain/recurring";
 import type { AppData, CurrencyCode, TransactionDraft, TransactionKind } from "../domain/types";
 import { CheckableTagList, DateField, SelectField, TextAreaField, TextField } from "./common";
 import type { FormOption } from "./common";
@@ -16,13 +17,14 @@ export function TransactionForm(props: {
 }) {
   const update = (patch: Partial<TransactionDraft>) => props.onChange({ ...props.draft, ...patch });
   const accountOptions = props.data.accounts.map((item) => option(item.id, `${item.name} · ${ACCOUNT_KIND_LABELS[item.kind]}`));
+  const selectedAccount = props.data.accounts.find((item) => item.id === props.draft.accountId);
   const className = props.embedded ? "grid gap-5 md:grid-cols-2" : "panel grid gap-4 p-4 md:grid-cols-2";
   return (
     <div className={className}>
       <SelectField label="类型" value={props.draft.kind} options={kindOptions()} onChange={(value) => updateKind(value as TransactionKind, props.data, props.draft, props.onChange)} />
-      <SelectField label={accountLabel(props.draft.kind)} value={props.draft.accountId} options={accountOptions} onChange={(accountId) => update({ accountId })} />
+      <SelectField label={accountLabel(props.draft.kind)} value={props.draft.accountId} options={accountOptions} onChange={(accountId) => changeAccount(accountId, props.data, props.draft, props.onChange)} />
       <TextField label="金额" type="number" value={props.draft.amount} onChange={(amount) => update({ amount: Number(amount) })} />
-      <SelectField label="币种" value={props.draft.currency} options={currencyOptions(props.data)} onChange={(currency) => update({ currency: currency as CurrencyCode })} />
+      <SelectField label="币种" value={props.draft.currency} options={currencyOptions(selectedAccount)} onChange={(currency) => update({ currency: currency as CurrencyCode })} />
       {showsCategory(props.draft.kind) && <SelectField label="分类" value={props.draft.categoryId ?? ""} options={categoryOptions(props.data, props.draft.kind)} onChange={(categoryId) => update({ categoryId: categoryId || undefined })} />}
       {props.draft.kind === "transfer" && <TransferFields data={props.data} draft={props.draft} update={update} />}
       {props.draft.kind === "credit_payment" && <PaymentSourceField data={props.data} draft={props.draft} update={update} />}
@@ -46,11 +48,12 @@ function TransferFields(props: {
   readonly draft: TransactionDraft;
   readonly update: (patch: Partial<TransactionDraft>) => void;
 }) {
+  const targetAccount = props.data.accounts.find((item) => item.id === props.draft.relatedAccountId);
   return (
     <>
-      <SelectField label="目标账户" value={props.draft.relatedAccountId ?? ""} options={accountOptionsWithEmpty(props.data, "未选择")} onChange={(relatedAccountId) => props.update({ relatedAccountId: relatedAccountId || undefined })} />
+      <SelectField label="目标账户" value={props.draft.relatedAccountId ?? ""} options={accountOptionsWithEmpty(props.data, "未选择")} onChange={(relatedAccountId) => props.update(transferAccountPatch(props.data, props.draft, relatedAccountId))} />
       <TextField label="转入金额" type="number" value={props.draft.targetAmount ?? props.draft.amount} onChange={(targetAmount) => props.update({ targetAmount: Number(targetAmount) })} />
-      <SelectField label="转入币种" value={props.draft.targetCurrency ?? props.draft.currency} options={currencyOptions(props.data)} onChange={(targetCurrency) => props.update({ targetCurrency: targetCurrency as CurrencyCode })} />
+      <SelectField label="转入币种" value={props.draft.targetCurrency ?? props.draft.currency} options={currencyOptions(targetAccount)} onChange={(targetCurrency) => props.update({ targetCurrency: targetCurrency as CurrencyCode })} />
     </>
   );
 }
@@ -106,8 +109,8 @@ function kindOptions(): readonly FormOption[] {
   return TRANSACTION_KINDS.map((kind) => option(kind, TRANSACTION_KIND_LABELS[kind]));
 }
 
-function currencyOptions(data: AppData): readonly FormOption[] {
-  return data.currencies.map((currency) => option(currency, currency));
+function currencyOptions(account: AppData["accounts"][number] | undefined): readonly FormOption[] {
+  return (account ? accountCurrencyOptions(account) : []).map((currency) => option(currency, currency));
 }
 
 function option(value: string, label: string): FormOption {
@@ -120,4 +123,25 @@ function showsCategory(kind: TransactionKind): boolean {
 
 function accountLabel(kind: TransactionKind): string {
   return kind === "credit_payment" ? "还款目标信用卡" : "账户";
+}
+
+function changeAccount(accountId: string, data: AppData, draft: TransactionDraft, onChange: (draft: TransactionDraft) => void): void {
+  const account = data.accounts.find((item) => item.id === accountId);
+  onChange({
+    ...draft,
+    accountId,
+    currency: account ? currencyForAccount(account, draft.currency) as CurrencyCode : draft.currency,
+  });
+}
+
+function transferAccountPatch(
+  data: AppData,
+  draft: TransactionDraft,
+  relatedAccountId: string,
+): Partial<TransactionDraft> {
+  const account = data.accounts.find((item) => item.id === relatedAccountId);
+  return {
+    relatedAccountId: relatedAccountId || undefined,
+    targetCurrency: account ? currencyForAccount(account, draft.targetCurrency ?? draft.currency) as CurrencyCode : undefined,
+  };
 }

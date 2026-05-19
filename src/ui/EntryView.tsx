@@ -6,23 +6,21 @@ import { validateTransactionDraft } from "../ai/validation";
 import { createTransaction } from "../domain/factory";
 import { upsertTransaction, validateTransactionDraft as validateDraft } from "../domain/operations";
 import type { AppData, TransactionDraft } from "../domain/types";
-import { ErrorBanner, MessageBanner, SectionPanel, SuccessBanner } from "./common";
+import { ErrorBanner, MessageBanner, PageHeader, SectionPanel, SuccessBanner } from "./common";
 import type { StatusMessage } from "./common";
 import { money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
-import { Button, Input, Modal, Upload } from "./metis";
+import { Button, Input, Upload } from "./metis";
 import { TransactionForm } from "./TransactionForm";
 import { initialTransactionDraft } from "./transactionDraft";
 
-interface EntryDialogProps {
-  readonly open: boolean;
+interface EntryViewProps {
   readonly data: AppData;
   readonly setData: (data: AppData) => void;
   readonly setStatus: (status: StatusMessage) => void;
-  readonly onClose: () => void;
 }
 
-export function EntryDialog(props: EntryDialogProps) {
+export function EntryView(props: EntryViewProps) {
   const [draft, setDraft] = useState(() => initialDraft(props.data));
   const [candidate, setCandidate] = useState<TransactionDraft>();
   const [aiText, setAiText] = useState("");
@@ -30,7 +28,8 @@ export function EntryDialog(props: EntryDialogProps) {
   const saveDraft = () => saveTransactionDraft({ props, draft, setDraft, setMessage });
 
   return (
-    <Modal open={props.open} title="记账" width={1080} footer={null} onCancel={props.onClose}>
+    <section className="space-y-5">
+      <PageHeader title="记账" />
       <div className="space-y-4">
         <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
           <TransactionForm data={props.data} draft={draft} onChange={setDraft} onSubmit={saveDraft} submitLabel="保存交易" />
@@ -40,7 +39,7 @@ export function EntryDialog(props: EntryDialogProps) {
         <ErrorBanner message={message.includes("失败") || message.includes("请先") ? message : ""} />
         <SuccessBanner message={message && !message.includes("失败") && !message.includes("请先") ? message : ""} />
       </div>
-    </Modal>
+    </section>
   );
 }
 
@@ -106,7 +105,7 @@ function CandidatePanel(props: {
 }
 
 function saveTransactionDraft(options: {
-  readonly props: EntryDialogProps;
+  readonly props: EntryViewProps;
   readonly draft: TransactionDraft;
   readonly setDraft: (draft: TransactionDraft) => void;
   readonly setMessage: (value: string) => void;
@@ -120,7 +119,6 @@ function saveTransactionDraft(options: {
   options.props.setData(updated);
   options.setDraft(initialDraft(updated));
   options.setMessage("交易已保存");
-  options.props.onClose();
 }
 
 function initialDraft(data: AppData): TransactionDraft {

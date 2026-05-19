@@ -47,6 +47,17 @@ describe("recurring rules", () => {
       .toThrow("支付币种与支付方式不匹配");
   });
 
+  it("rejects missing or non-expense recurring categories", () => {
+    const data = initialData();
+    const incomeCategory = { ...data.categories[0], id: "income", direction: "income" as const };
+    const rule = recurringRule(data);
+
+    expect(() => validateRecurringRule(data, { ...rule, transaction: { ...rule.transaction, categoryId: "missing" } }))
+      .toThrow("分类不存在");
+    expect(() => validateRecurringRule({ ...data, categories: [incomeCategory] }, { ...rule, transaction: { ...rule.transaction, categoryId: "income" } }))
+      .toThrow("订阅分类必须是支出分类");
+  });
+
   it("rejects invalid dates and dates earlier than one month ago", () => {
     const data = initialData();
     const now = new Date("2026-05-18T12:00:00.000Z");
@@ -83,6 +94,33 @@ describe("recurring rules", () => {
       "2027-05-02T00:00:00.000Z",
     ]);
   });
+
+  it("writes the recurring rule name into generated transaction notes", () => {
+    const base = initialData();
+    const data: AppData = {
+      ...base,
+      recurringRules: [
+        recurringRule(base, { name: "Netflix", transaction: { note: "" } }),
+        recurringRule(base, { id: "with-note", name: "房租", transaction: { note: "五月" } }),
+      ],
+    };
+
+    const next = materializeDueRecurring(data, new Date("2026-05-18T00:00:00.000Z"));
+
+    expect(next.transactions.map((transaction) => transaction.note)).toEqual(["Netflix", "房租：五月"]);
+  });
+
+  it("copies the recurring category into generated transactions", () => {
+    const base = initialData();
+    const data: AppData = {
+      ...base,
+      recurringRules: [recurringRule(base, { transaction: { categoryId: base.categories[0].id } })],
+    };
+
+    const next = materializeDueRecurring(data, new Date("2026-05-18T00:00:00.000Z"));
+
+    expect(next.transactions[0]?.categoryId).toBe(base.categories[0].id);
+  });
 });
 
 function accountFixture(patch: Partial<Account>): Account {
@@ -96,7 +134,7 @@ function recurringRule(data: AppData, patch: Partial<RecurringRule> = {}): Recur
     id: patch.id ?? "rule",
     createdAt: timestamp,
     updatedAt: timestamp,
-    name: "订阅",
+    name: patch.name ?? "订阅",
     enabled: true,
     interval: patch.interval ?? "monthly",
     nextRunAt: patch.nextRunAt ?? timestamp,

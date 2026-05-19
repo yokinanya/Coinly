@@ -48,6 +48,7 @@ export function validateRecurringRule(data: AppData, rule: RecurringRule, now = 
   if (!accountCurrencyOptions(account).includes(rule.transaction.currency)) {
     throw new Error("支付币种与支付方式不匹配");
   }
+  validateRecurringCategory(data, rule);
   if (!Number.isFinite(new Date(rule.nextRunAt).getTime())) {
     throw new Error("开始日期无效");
   }
@@ -64,8 +65,22 @@ function transactionFromRule(rule: RecurringRule): Transaction {
     updatedAt: timestamp,
     ...rule.transaction,
     occurredAt: rule.nextRunAt,
+    note: recurringTransactionNote(rule),
     sourceRecurringRuleId: rule.id,
   };
+}
+
+function recurringTransactionNote(rule: RecurringRule): string {
+  const note = rule.transaction.note.trim();
+  return note ? `${rule.name}：${note}` : rule.name;
+}
+
+function validateRecurringCategory(data: AppData, rule: RecurringRule): void {
+  const categoryId = rule.transaction.categoryId;
+  if (!categoryId) return;
+  const category = data.categories.find((item) => item.id === categoryId);
+  if (!category) throw new Error("分类不存在");
+  if (category.direction !== "expense") throw new Error("订阅分类必须是支出分类");
 }
 
 function advanceRuleIfDue(rule: RecurringRule, now: Date): RecurringRule {

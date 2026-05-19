@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AppData, Transaction } from "../domain/types";
 import { dateOnly, money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
@@ -20,7 +20,8 @@ export function TransactionTable(props: {
   readonly onDelete: (transaction: Transaction) => void;
 }) {
   const [tableState, setTableState] = useState<TableState>();
-  const visibleTransactions = tableState?.source === props.transactions ? tableState.rows : props.transactions;
+  const sortedTransactions = useMemo(() => sortByOccurredAt(props.transactions), [props.transactions]);
+  const visibleTransactions = tableState?.source === sortedTransactions ? tableState.rows : sortedTransactions;
   const pageTransactions = currentPageRows(visibleTransactions, tableState?.pagination ?? {});
 
   return (
@@ -29,19 +30,25 @@ export function TransactionTable(props: {
         defaultPageSize: DEFAULT_PAGE_SIZE,
         showSizeChanger: true,
         pageSizeOptions: PAGE_SIZE_OPTIONS,
-        total: props.transactions.length,
+        total: sortedTransactions.length,
       }}
-      dataSource={props.transactions}
+      dataSource={sortedTransactions}
       rowKey="id"
       scroll={{ x: 880 }}
       locale={{ emptyText: "暂无交易" }}
       columns={transactionColumns({ ...props, pageTransactions })}
       onChange={(pagination, _filters, _sorter, extra) => {
-        setTableState({ source: props.transactions, rows: extra.currentDataSource, pagination });
+        setTableState({ source: sortedTransactions, rows: extra.currentDataSource, pagination });
         props.setSelectedIds(visibleSelectedIds(props.selectedIds, extra.currentDataSource));
       }}
     />
   );
+}
+
+function sortByOccurredAt(transactions: readonly Transaction[]): readonly Transaction[] {
+  return [...transactions].sort((left, right) => {
+    return right.occurredAt.localeCompare(left.occurredAt) || right.createdAt.localeCompare(left.createdAt);
+  });
 }
 
 interface TableState {

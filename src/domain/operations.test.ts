@@ -82,6 +82,40 @@ describe("operations", () => {
     expect(result.errors).toContain("转账必须选择目标账户");
   });
 
+  it("rejects transaction currencies unsupported by the selected account", () => {
+    const base = initialData();
+    const result = validateTransactionDraft(base, {
+      kind: "expense",
+      accountId: base.accounts[0].id,
+      amount: 10,
+      currency: "USD",
+      occurredAt: "2026-05-10T00:00:00.000Z",
+      tagIds: [],
+      note: "",
+    });
+
+    expect(result.errors).toContain("交易币种与账户不匹配");
+  });
+
+  it("rejects transfer target currencies unsupported by the target account", () => {
+    const base = initialData();
+    const target = { ...base.accounts[0], id: "target", currency: "HKD" };
+    const result = validateTransactionDraft({ ...base, accounts: [...base.accounts, target] }, {
+      kind: "transfer",
+      accountId: base.accounts[0].id,
+      amount: 10,
+      currency: "CNY",
+      targetAmount: 11,
+      targetCurrency: "USD",
+      relatedAccountId: "target",
+      occurredAt: "2026-05-10T00:00:00.000Z",
+      tagIds: [],
+      note: "",
+    });
+
+    expect(result.errors).toContain("转入币种与目标账户不匹配");
+  });
+
   it("allows credit card payments without a source account", () => {
     const base = initialData();
     const card = { ...base.accounts[0], id: "card", kind: "credit" as const };
