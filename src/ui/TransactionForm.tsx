@@ -19,7 +19,7 @@ export function TransactionForm(props: {
   const className = props.embedded ? "grid gap-5 md:grid-cols-2" : "panel grid gap-4 p-4 md:grid-cols-2";
   return (
     <div className={className}>
-      <SelectField label="类型" value={props.draft.kind} options={kindOptions()} onChange={(value) => updateKind(value as TransactionKind, props.draft, props.onChange)} />
+      <SelectField label="类型" value={props.draft.kind} options={kindOptions()} onChange={(value) => updateKind(value as TransactionKind, props.data, props.draft, props.onChange)} />
       <SelectField label={accountLabel(props.draft.kind)} value={props.draft.accountId} options={accountOptions} onChange={(accountId) => update({ accountId })} />
       <TextField label="金额" type="number" value={props.draft.amount} onChange={(amount) => update({ amount: Number(amount) })} />
       <SelectField label="币种" value={props.draft.currency} options={currencyOptions(props.data)} onChange={(currency) => update({ currency: currency as CurrencyCode })} />
@@ -75,12 +75,17 @@ function TagPicker(props: {
   );
 }
 
-function updateKind(kind: TransactionKind, draft: TransactionDraft, onChange: (draft: TransactionDraft) => void) {
-  const categoryId = showsCategory(kind) ? draft.categoryId : undefined;
+function updateKind(kind: TransactionKind, data: AppData, draft: TransactionDraft, onChange: (draft: TransactionDraft) => void) {
+  const categoryId = validCategoryId(data, kind, draft.categoryId);
   const targetAmount = kind === "transfer" ? draft.targetAmount ?? draft.amount : undefined;
   const targetCurrency = kind === "transfer" ? draft.targetCurrency ?? draft.currency : undefined;
   const refundOfTransactionId = kind === "refund" ? draft.refundOfTransactionId : undefined;
   onChange({ ...draft, kind, categoryId, targetAmount, targetCurrency, refundOfTransactionId });
+}
+
+function validCategoryId(data: AppData, kind: TransactionKind, categoryId?: string): string | undefined {
+  if (!categoryId || !showsCategory(kind)) return undefined;
+  return categoryOptions(data, kind).some((option) => option.value === categoryId) ? categoryId : undefined;
 }
 
 function categoryOptions(data: AppData, kind: TransactionKind): readonly FormOption[] {
