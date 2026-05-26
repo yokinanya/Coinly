@@ -1,10 +1,9 @@
-import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, PieChart, PlusCircle, Settings, Sparkles, Tags, Wallet, X } from "lucide-react";
-import type { Key } from "react";
+import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, MonitorCog, Moon, PieChart, PlusCircle, Settings, Sparkles, Sun, Tags, Wallet, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { ThemeMode } from "../domain/types";
 import { pushViewPath, type ViewId } from "./appRoutes";
-import { Drawer, Layout, Menu } from "./metis";
+import { Drawer } from "./components";
 
-const SIDEBAR_WIDTH = 240;
 const DRAWER_WIDTH = 280;
 
 const NAV_ITEMS = [
@@ -23,6 +22,8 @@ const NAV_ITEMS = [
 export function NavigationSidebar(props: {
   readonly viewId: ViewId;
   readonly setViewId: (id: ViewId) => void;
+  readonly theme: ThemeMode;
+  readonly onThemeChange: (theme: ThemeMode) => void;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const items = useNavigationItems();
@@ -33,11 +34,11 @@ export function NavigationSidebar(props: {
   return (
     <>
       <MobileHeader openMenu={() => setMobileOpen(true)} goHome={() => select("home")} />
-      <Layout.Sider className="fixed inset-y-0 left-0 z-20 hidden border-r border-[var(--color-border)] bg-[var(--color-surface)] md:block" width={SIDEBAR_WIDTH}>
-        <SidebarContent items={items} viewId={props.viewId} onSelect={select} />
-      </Layout.Sider>
+      <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-[var(--color-border)] bg-[var(--color-surface)] md:block">
+        <SidebarContent items={items} viewId={props.viewId} theme={props.theme} onThemeChange={props.onThemeChange} onSelect={select} />
+      </aside>
       <Drawer
-        className={{ body: "p-0", content: "bg-[var(--color-surface)]" }}
+        className={{ body: "drawer-body-full p-0", content: "bg-transparent" }}
         closable={false}
         open={mobileOpen}
         title={null}
@@ -45,7 +46,7 @@ export function NavigationSidebar(props: {
         placement="left"
         onClose={() => setMobileOpen(false)}
       >
-        <SidebarContent items={items} viewId={props.viewId} onSelect={select} compact onClose={() => setMobileOpen(false)} />
+        <SidebarContent items={items} viewId={props.viewId} theme={props.theme} onThemeChange={props.onThemeChange} onSelect={select} compact onClose={() => setMobileOpen(false)} />
       </Drawer>
     </>
   );
@@ -54,9 +55,8 @@ export function NavigationSidebar(props: {
 function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: () => void }) {
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-[var(--safe-top)] md:hidden">
-      <button className="text-lg font-semibold leading-none text-[var(--color-text)]" type="button" onClick={props.goHome}>Coinly</button>
       <button
-        className="grid h-10 w-10 place-items-center rounded-md text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-muted)]"
+        className="motion-press grid h-10 w-10 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)]"
         type="button"
         aria-label="打开导航"
         title="打开导航"
@@ -64,6 +64,8 @@ function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: (
       >
         <MenuIcon size={22} />
       </button>
+      <button className="text-lg font-semibold leading-none text-[var(--color-text)]" type="button" onClick={props.goHome}>Coinly</button>
+      <span className="h-10 w-10" aria-hidden="true" />
     </header>
   );
 }
@@ -71,18 +73,20 @@ function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: (
 function SidebarContent(props: {
   readonly items: ReturnType<typeof useNavigationItems>;
   readonly viewId: ViewId;
+  readonly theme: ThemeMode;
+  readonly onThemeChange: (theme: ThemeMode) => void;
   readonly onSelect: (id: ViewId) => void;
   readonly compact?: boolean;
   readonly onClose?: () => void;
 }) {
   const paddingClass = props.compact ? "px-3 pb-4 pt-[calc(1rem+var(--safe-top))]" : "px-3 pb-4 pt-[calc(1.5rem+var(--safe-top))]";
   return (
-    <div className={`flex h-full min-h-0 flex-col bg-[var(--color-surface)] ${paddingClass}`}>
+    <div className={`flex h-full min-h-0 flex-col bg-transparent ${paddingClass}`}>
       <div className="flex min-h-12 items-center justify-between px-2 pb-4">
         <button className={`${props.compact ? "text-lg" : "text-2xl"} font-semibold text-[var(--color-text)]`} type="button" onClick={() => selectHome(props)}>Coinly</button>
         {props.compact && (
           <button
-            className="grid h-9 w-9 place-items-center rounded-md text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-muted)]"
+            className="motion-press grid h-9 w-9 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)]"
             type="button"
             aria-label="关闭导航"
             title="关闭导航"
@@ -92,22 +96,64 @@ function SidebarContent(props: {
           </button>
         )}
       </div>
-      <Menu
-        className={{ root: "border-none bg-transparent" }}
-        items={props.items}
-        mode="inline"
-        selectedKeys={[props.viewId]}
-        onClick={(event: { readonly key: Key }) => props.onSelect(event.key as ViewId)}
-      />
+      <nav className="flex-1 space-y-1">
+        {props.items.map((item) => (
+          <button
+            key={item.key}
+            className={`motion-press relative flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium ${props.viewId === item.key ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] ring-1 ring-[var(--color-accent)]/20 before:absolute before:left-0 before:top-2 before:h-6 before:w-1 before:rounded-r before:bg-[var(--color-accent)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)]"}`}
+            type="button"
+            onClick={() => props.onSelect(item.key)}
+          >
+            {item.icon}
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      <footer className="mt-4 flex justify-end border-t border-[var(--color-border)] px-2 pt-4">
+        <ThemeButton theme={props.theme} onChange={props.onThemeChange} />
+      </footer>
     </div>
   );
+}
+
+function ThemeButton(props: { readonly theme: ThemeMode; readonly onChange: (theme: ThemeMode) => void }) {
+  const next = nextTheme(props.theme);
+  return (
+    <button
+      className="motion-press grid h-10 w-10 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)]"
+      type="button"
+      title={`切换到${themeLabel(next)}`}
+      aria-label={`当前主题：${themeLabel(props.theme)}，切换到${themeLabel(next)}`}
+      onClick={() => props.onChange(next)}
+    >
+      <ThemeIcon theme={props.theme} />
+    </button>
+  );
+}
+
+function ThemeIcon(props: { readonly theme: ThemeMode }) {
+  if (props.theme === "system") return <MonitorCog size={18} />;
+  if (props.theme === "dark") return <Moon size={18} />;
+  return <Sun size={18} />;
+}
+
+function nextTheme(theme: ThemeMode): ThemeMode {
+  if (theme === "system") return "light";
+  if (theme === "light") return "dark";
+  return "system";
+}
+
+function themeLabel(theme: ThemeMode): string {
+  if (theme === "light") return "浅色";
+  if (theme === "dark") return "深色";
+  return "跟随系统";
 }
 
 function useNavigationItems() {
   return useMemo(
     () =>
       NAV_ITEMS.map((item) => ({
-        key: item.id,
+        key: item.id as ViewId,
         icon: <item.icon size={18} />,
         label: item.label,
       })),

@@ -6,7 +6,7 @@ import { runAiAnalysis } from "./analysisActions";
 import { ErrorBanner, PageHeader, SelectField } from "./common";
 import type { FormOption } from "./common";
 import { MarkdownContent } from "./MarkdownContent";
-import { Button } from "./metis";
+import { Button } from "./components";
 
 const ANALYSIS_SCOPE_OPTIONS: readonly FormOption[] = [
   { value: "current-month", label: "本月" },

@@ -1,16 +1,16 @@
 import { useCallback, type ReactNode } from "react";
 import { bumpVersion } from "../domain/factory";
-import type { AiSettings, AppData, SyncSettings, ThemeMode } from "../domain/types";
+import type { AiSettings, AppData, SyncSettings } from "../domain/types";
 import { PageHeader } from "./common";
 import {
   AiSettingsPanel,
   CatalogPanel,
   CurrencyPanel,
   DataPanel,
-  ThemePanel,
 } from "./settingsPanels";
 import { SyncPanel } from "./syncSettingsPanel";
-import { List, Message } from "./metis";
+import { List } from "./components";
+import { Message } from "./toastApi";
 import type { StatusTone } from "./common";
 import { statusFromText } from "./status";
 import { FadeIn } from "./motion";
@@ -26,14 +26,12 @@ export function SettingsView(props: {
   }, []);
   const updateSync = (settings: SyncSettings) => props.setVaultData(bumpVersion({ ...props.data, syncSettings: settings }));
   const updateAi = (settings: AiSettings) => props.setVaultData(bumpVersion({ ...props.data, aiSettings: settings }));
-  const updateTheme = (theme: ThemeMode) => props.setVaultData(bumpVersion({ ...props.data, uiSettings: { theme } }));
 
   return (
     <section className="space-y-5">
       <PageHeader title="设置" />
       <SettingsList
         sections={[
-          { key: "theme", node: <ThemePanel theme={props.data.uiSettings?.theme ?? "system"} onChange={updateTheme} /> },
           { key: "sync", node: <SyncPanel data={props.data} settings={props.data.syncSettings} onChange={updateSync} applyRemote={props.setData} setMessage={report} /> },
           { key: "ai", node: <AiSettingsPanel settings={props.data.aiSettings} onChange={updateAi} /> },
           { key: "currency", node: <CurrencyPanel data={props.data} setData={props.setVaultData} setMessage={report} /> },
@@ -60,11 +58,10 @@ function SettingsList(props: { readonly sections: readonly { readonly key: strin
   return (
     <div className="w-full">
       <List
-        bordered
-        className="w-full"
+        className="w-full space-y-3"
         dataSource={[...props.sections]}
         rowKey="key"
-        renderItem={(section) => <List.Item><FadeIn>{section.node}</FadeIn></List.Item>}
+        renderItem={(section) => <FadeIn>{section.node}</FadeIn>}
       />
     </div>
   );

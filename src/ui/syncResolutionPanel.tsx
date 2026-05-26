@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { AppData, SyncSettings, SyncTarget } from "../domain/types";
 import { overwriteRemote, overwriteSyncTarget } from "../sync/syncClient";
 import { collectionDiffTotal, hasDiff, summarizeSyncDiff, type CollectionDiffSummary, type SyncDiffSummary } from "../sync/syncDiff";
-import { Button, Modal } from "./metis";
+import { Button, Modal } from "./components";
 
 export type SyncResolutionStatus = "remote-conflict" | "remote-divergent" | "remote-plaintext";
 

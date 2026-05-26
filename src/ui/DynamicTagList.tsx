@@ -1,6 +1,6 @@
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { Tag } from "./metis";
+import { Tag } from "./components";
 
 export function DynamicTagList(props: {
   readonly values: readonly string[];

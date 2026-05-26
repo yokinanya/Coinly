@@ -4,7 +4,7 @@ import type { AppData, CurrencyCode, TransactionDraft, TransactionKind } from ".
 import { CheckableTagList, DateField, SelectField, TextAreaField, TextField } from "./common";
 import type { FormOption } from "./common";
 import { ACCOUNT_KIND_LABELS, TRANSACTION_KIND_LABELS } from "./labels";
-import { Button } from "./metis";
+import { Button } from "./components";
 
 export function TransactionForm(props: {
   readonly data: AppData;
@@ -14,6 +14,7 @@ export function TransactionForm(props: {
   readonly onSubmit: () => void;
   readonly onCancel?: () => void;
   readonly embedded?: boolean;
+  readonly submitting?: boolean;
 }) {
   const update = (patch: Partial<TransactionDraft>) => props.onChange({ ...props.draft, ...patch });
   const accountOptions = props.data.accounts.map((item) => option(item.id, `${item.name} · ${ACCOUNT_KIND_LABELS[item.kind]}`));
@@ -35,7 +36,7 @@ export function TransactionForm(props: {
       </div>
       {!props.embedded && (
         <div className="flex flex-wrap gap-2 md:col-span-2">
-          <Button variant="primary" onClick={props.onSubmit}>{props.submitLabel}</Button>
+          <Button variant="primary" loading={props.submitting} disabled={props.submitting} onClick={props.onSubmit}>{props.submitLabel}</Button>
           {props.onCancel && <Button onClick={props.onCancel}>取消</Button>}
         </div>
       )}

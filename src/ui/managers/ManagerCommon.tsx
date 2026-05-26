@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { AppData } from "../../domain/types";
 import { ConfirmDialog, SelectField as CommonSelectField, TextField } from "../common";
 import type { FormOption } from "../common";
-import { Button, Drawer } from "../metis";
+import { Button, Drawer } from "../components";
 import { FadeIn } from "../motion";
 
 const DRAWER_WIDTH = 440;

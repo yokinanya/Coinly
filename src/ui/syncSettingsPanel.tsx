@@ -2,12 +2,13 @@ import { Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import type { AppData, SyncSettings, SyncTarget } from "../domain/types";
 import { normalizeSyncSettings, syncData, type SyncResult } from "../sync/syncClient";
-import { Button } from "./metis";
+import { Button } from "./components";
 import { SettingsSection } from "./settingsSection";
 import { ProviderList, TargetModal } from "./syncProviderList";
 import { SyncResolutionPanel } from "./syncResolutionPanel";
 import type { SyncResolution } from "./syncResolutionPanel";
-import { defaultSyncTarget, targetIdentity, upsertSyncTarget } from "./syncTargetHelpers";
+import { defaultSyncTarget, upsertSyncTarget } from "./syncTargetHelpers";
+import { markSyncedTargets, readSyncLastSyncedAt } from "./syncLastSyncedStore";
 
 export function SyncPanel(props: {
   readonly data: AppData;
@@ -18,7 +19,7 @@ export function SyncPanel(props: {
 }) {
   const settings = normalizeSyncSettings(props.settings) ?? defaultSyncSettings();
   const targets = settings.targets ?? [];
-  const lastSyncedAt = props.data.uiSettings?.syncTargetLastSyncedAt ?? {};
+  const [lastSyncedAt, setLastSyncedAt] = useState(readSyncLastSyncedAt);
   const hasAutoTargets = targets.some((target) => target.enabled);
   const [newTarget, setNewTarget] = useState<SyncTarget>();
   const [resolution, setResolution] = useState<SyncResolution>();
@@ -26,7 +27,7 @@ export function SyncPanel(props: {
   const update = (patch: Partial<SyncSettings>) => props.onChange({ ...settings, ...patch });
   const setTargets = (nextTargets: readonly SyncTarget[]) => update({ targets: nextTargets });
   const onSyncResult = (result: SyncResult, target?: SyncTarget) => {
-    reportSyncResult({ result, target, settings, data: props.data, applyRemote: props.applyRemote, setResolution, setMessage: props.setMessage });
+    reportSyncResult({ result, target, settings, data: props.data, applyRemote: props.applyRemote, setResolution, setLastSyncedAt, setMessage: props.setMessage });
   };
   return (
     <SettingsSection title="同步">
@@ -68,11 +69,17 @@ function SyncToolbar(props: {
   readonly onSyncAll: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="toolbar flex flex-wrap items-center justify-between gap-3 p-3">
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">同步源</h3>
+        <p className="text-xs text-[var(--color-text-secondary)]">配置云端加密包位置，手动验证连接后再开启自动同步。</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
       <Button onClick={props.onAdd}><Plus size={16} />添加同步源</Button>
       <Button disabled={!props.hasAutoTargets || props.syncing} loading={props.syncing} onClick={props.onSyncAll}>
         <RefreshCw size={16} />同步全部
       </Button>
+      </div>
     </div>
   );
 }
@@ -99,9 +106,11 @@ function reportSyncResult(options: {
   readonly applyRemote: (data: AppData) => void;
   readonly setResolution: (resolution: SyncResolution) => void;
   readonly setMessage: (value: string) => void;
+  readonly setLastSyncedAt: (value: Readonly<Record<string, string>>) => void;
 }): void {
   if (isRemoteNewer(options.result) || isMerged(options.result)) {
-    options.applyRemote(withSyncedTargets(options.result.remoteData, options.data, options.settings, options.target, new Date().toISOString()));
+    options.applyRemote(withLocalUiSettings(options.result.remoteData, options.data));
+    markSuccessfulSync(options);
     options.setMessage(options.result.status === "merged" ? "已自动合并本地与远端账本" : "已同步远端账本到本地");
     return;
   }
@@ -110,9 +119,29 @@ function reportSyncResult(options: {
     return;
   }
   if (isSuccessfulSync(options.result)) {
-    options.applyRemote(withSyncedTargets(options.data, options.data, options.settings, options.target, new Date().toISOString()));
+    markSuccessfulSync(options);
   }
   options.setMessage(syncResultMessage(options.result));
+}
+
+function markSuccessfulSync(options: {
+  readonly settings: SyncSettings;
+  readonly target?: SyncTarget;
+  readonly setLastSyncedAt: (value: Readonly<Record<string, string>>) => void;
+}): void {
+  options.setLastSyncedAt(markSyncedTargets(readSyncLastSyncedAt(), options.settings, options.target, new Date().toISOString()));
+}
+
+function withLocalUiSettings(data: AppData, localData: AppData): AppData {
+  return {
+    ...data,
+    uiSettings: {
+      ...data.uiSettings,
+      ...localData.uiSettings,
+      theme: localData.uiSettings?.theme ?? data.uiSettings?.theme ?? "system",
+      syncTargetLastSyncedAt: undefined,
+    },
+  };
 }
 
 function isRemoteNewer(result: SyncResult): result is SyncResult & { readonly remoteData: AppData } {
@@ -140,36 +169,6 @@ function syncResultMessage(result: SyncResult): string {
 
 function isSuccessfulSync(result: SyncResult): boolean {
   return result.status === "uploaded" || result.status === "up-to-date";
-}
-
-function withSyncedTargets(
-  data: AppData,
-  localData: AppData,
-  settings: SyncSettings,
-  target: SyncTarget | undefined,
-  syncedAt: string,
-): AppData {
-  return {
-    ...data,
-    uiSettings: {
-      theme: data.uiSettings?.theme ?? localData.uiSettings?.theme ?? "system",
-      recentEntry: data.uiSettings?.recentEntry ?? localData.uiSettings?.recentEntry,
-      syncTargetLastSyncedAt: syncedTargetTimes(localData.uiSettings?.syncTargetLastSyncedAt, settings, target, syncedAt),
-    },
-  };
-}
-
-function syncedTargetTimes(
-  current: Readonly<Record<string, string>> | undefined,
-  settings: SyncSettings,
-  target: SyncTarget | undefined,
-  syncedAt: string,
-): Readonly<Record<string, string>> {
-  return (settings.targets ?? []).reduce<Record<string, string>>((result, item) => {
-    if (target && targetIdentity(item) !== targetIdentity(target)) return result;
-    if (!target && !item.enabled) return result;
-    return { ...result, [targetIdentity(item)]: syncedAt };
-  }, { ...(current ?? {}) });
 }
 
 function errorMessage(error: unknown, fallback: string): string {

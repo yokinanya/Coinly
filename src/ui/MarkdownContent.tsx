@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export function MarkdownContent(props: { readonly content: string }) {
-  return <div className="row-card space-y-3 p-3 text-sm leading-6">{parseMarkdown(props.content)}</div>;
+  return <div className="row-card motion-selection space-y-3 p-3 text-sm leading-6">{parseMarkdown(props.content)}</div>;
 }
 
 function parseMarkdown(content: string): readonly ReactNode[] {

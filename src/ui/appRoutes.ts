@@ -1,9 +1,10 @@
-export type ViewId = "home" | "entry" | "transactions" | "accounts" | "budget" | "stats" | "analysis" | "categories" | "recurring" | "settings";
+export type ViewId = "home" | "entry" | "transactions" | "statements" | "accounts" | "budget" | "stats" | "analysis" | "categories" | "recurring" | "settings";
 
 export const VIEW_PATHS: Record<ViewId, string> = {
   home: "/",
   entry: "/entry",
   transactions: "/transactions",
+  statements: "/statements",
   accounts: "/accounts",
   budget: "/budget",
   stats: "/stats",

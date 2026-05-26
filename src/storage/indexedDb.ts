@@ -1,4 +1,5 @@
 import { initialData } from "../domain/factory";
+import { withoutLocalOnlyUiSettings } from "../domain/localOnly";
 import type { AppData } from "../domain/types";
 import { assertValidAppData, dataSummary, migrateData, parseImportedData as parsePlainImportedData, previewImportedData as previewPlainImportedData } from "./dataValidation";
 import type { DataSummary, ImportPreview } from "./dataValidation";
@@ -63,13 +64,13 @@ export async function loadData(): Promise<LoadedDataResult> {
 
 export async function saveData(data: AppData, expectedToken: SaveToken): Promise<SaveToken> {
   const db = await openDatabase();
-  const nextToken = await writeData(db, await encryptAppData(data, currentUnlockState()), expectedToken);
+  const nextToken = await writeData(db, await encryptAppData(withoutLocalOnlyUiSettings(data), currentUnlockState()), expectedToken);
   db.close();
   return nextToken;
 }
 
 export async function exportData(data: AppData): Promise<string> {
-  return encryptAppData(data, currentUnlockState());
+  return encryptAppData(withoutLocalOnlyUiSettings(data), currentUnlockState());
 }
 
 export async function clearStoredVault(): Promise<void> {

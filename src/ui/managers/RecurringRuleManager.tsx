@@ -6,7 +6,7 @@ import type { Account, AppData, CurrencyCode, RecurringRule } from "../../domain
 import { ConfirmDialog, DateField, EmptyState, TextAreaField } from "../common";
 import { money } from "../format";
 import { ACCOUNT_KIND_LABELS, RECURRING_INTERVAL_LABELS } from "../labels";
-import { Button, List, Switch } from "../metis";
+import { Button, List, Switch } from "../components";
 import { removeEntity, requireName, requirePositive, runUpdate } from "./managerActions";
 import { Field, ManagerDrawer, SelectField } from "./ManagerCommon";
 import type { ManagerProps } from "./ManagerCommon";

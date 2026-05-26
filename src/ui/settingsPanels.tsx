@@ -5,7 +5,7 @@ import { SelectField, TextField } from "./common";
 import type { FormOption } from "./common";
 import { DataVaultPanel } from "./DataVaultPanel";
 import { DynamicTagList } from "./DynamicTagList";
-import { Switch } from "./metis";
+import { Switch } from "./components";
 import { SettingsSection } from "./settingsSection";
 
 export function ThemePanel(props: { readonly theme: ThemeMode; readonly onChange: (theme: ThemeMode) => void }) {

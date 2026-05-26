@@ -10,10 +10,10 @@ import {
   testSyncTarget,
   type SyncResult,
 } from "../sync/syncClient";
-import { Button, Modal, Popconfirm } from "./metis";
+import { Button, Modal, Popconfirm } from "./components";
 import { SyncTargetForm } from "./syncTargetForm";
 import { providerLabel, targetIdentity, upsertSyncTarget } from "./syncTargetHelpers";
-import { Switch } from "./metis";
+import { Switch } from "./components";
 
 type ProviderAction = "authorizing" | "disconnecting" | "testing" | "syncing" | "deleting";
 

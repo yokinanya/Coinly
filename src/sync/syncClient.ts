@@ -1,3 +1,4 @@
+import { withoutLocalOnlyUiSettings } from "../domain/localOnly";
 import type { AppData, SyncProvider, SyncSettings, SyncTarget } from "../domain/types";
 import { parseImportedData } from "../storage/indexedDb";
 import { decryptAppData, encryptAppData, isEncryptedPackage } from "../storage/encryption";
@@ -78,11 +79,11 @@ export async function syncAutoTarget(data: AppData, target: SyncTarget): Promise
 export async function overwriteRemote(data: AppData, settings?: SyncSettings): Promise<void> {
   const normalized = normalizeSyncSettings(settings);
   if (!normalized?.enabled) throw new Error("同步未启用，无法覆盖远端");
-  await writeTargets(activeTargets(normalized), await encryptAppData(data, currentUnlockState()));
+  await writeTargets(activeTargets(normalized), await encryptAppData(withoutLocalOnlyUiSettings(data), currentUnlockState()));
 }
 
 export async function overwriteSyncTarget(data: AppData, target: SyncTarget): Promise<void> {
-  await writeTargets([{ label: targetLabel(target, 0), target: normalizeTarget(target) }], await encryptAppData(data, currentUnlockState()));
+  await writeTargets([{ label: targetLabel(target, 0), target: normalizeTarget(target) }], await encryptAppData(withoutLocalOnlyUiSettings(data), currentUnlockState()));
 }
 
 export async function testSyncTarget(target: SyncTarget): Promise<ConnectionTestResult> {
@@ -149,12 +150,12 @@ async function syncActiveTargets(data: AppData, targets: readonly ActiveTarget[]
   const merged = mergeSyncData(data, remotes);
   if (merged.conflict) return { status: "remote-conflict", remoteData: merged.conflict };
   if (merged.data) {
-    await writeTargets(targets, await encryptAppData(merged.data, currentUnlockState()), latestRemoteVersion(remoteData));
+    await writeTargets(targets, await encryptAppData(withoutLocalOnlyUiSettings(merged.data), currentUnlockState()), latestRemoteVersion(remoteData));
     return { status: "merged", remoteData: merged.data };
   }
   const newer = newestRemote(remotes, dataTimestamp(data));
   if (newer) return { status: "remote-newer", remoteData: newer };
-  await writeTargets(targets, await encryptAppData(data, currentUnlockState()), latestRemoteVersion(remoteData));
+  await writeTargets(targets, await encryptAppData(withoutLocalOnlyUiSettings(data), currentUnlockState()), latestRemoteVersion(remoteData));
   return { status: "uploaded" };
 }
 

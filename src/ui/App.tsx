@@ -1,6 +1,7 @@
 import type { MutableRefObject } from "react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppData, SyncSettings, ThemeMode } from "../domain/types";
+import { bumpVersion } from "../domain/factory";
 import { saveData, type SaveToken } from "../storage/indexedDb";
 import type { StoredVaultState } from "../storage/indexedDb";
 import { syncData, type SyncResult } from "../sync/syncClient";
@@ -10,10 +11,12 @@ import { NavigationSidebar } from "./appNavigation";
 import { replaceUnknownPath, VIEW_PATHS, viewFromPath, type ViewId } from "./appRoutes";
 import { StatusBar } from "./common";
 import type { StatusMessage } from "./common";
-import { Message } from "./metis";
+import { Message } from "./toastApi";
+import { ToastViewport } from "./toast";
 import { PageTransition } from "./motion";
 import { statusFromText } from "./status";
 import { SyncResolutionPanel, type SyncResolution } from "./syncResolutionPanel";
+import { markSyncedTargets, readSyncLastSyncedAt } from "./syncLastSyncedStore";
 import { bootstrapVault, submitVault } from "./vaultStartup";
 
 const EMPTY_SYNC_SETTINGS: SyncSettings = { enabled: true, targets: [] };
@@ -22,6 +25,7 @@ const AccountsView = lazy(() => import("./AccountsView").then((module) => ({ def
 const AnalysisView = lazy(() => import("./AnalysisView").then((module) => ({ default: module.AnalysisView })));
 const BudgetView = lazy(() => import("./BudgetView").then((module) => ({ default: module.BudgetView })));
 const CategoriesView = lazy(() => import("./CategoriesView").then((module) => ({ default: module.CategoriesView })));
+const CreditStatementsView = lazy(() => import("./CreditStatementsView").then((module) => ({ default: module.CreditStatementsView })));
 const DashboardView = lazy(() => import("./DashboardView").then((module) => ({ default: module.DashboardView })));
 const EntryView = lazy(() => import("./EntryView").then((module) => ({ default: module.EntryView })));
 const RecurringView = lazy(() => import("./RecurringView").then((module) => ({ default: module.RecurringView })));
@@ -102,13 +106,21 @@ export function App() {
     );
   }
   return (
-    <div className="min-h-[100svh] bg-[var(--color-background)] md:min-h-screen">
-      <NavigationSidebar viewId={viewId} setViewId={setViewId} />
+    <div className="app-shell min-h-[100svh] md:min-h-screen">
+      <div className="app-bg" aria-hidden="true" />
+      <NavigationSidebar
+        viewId={viewId}
+        setViewId={setViewId}
+        theme={data.uiSettings?.theme ?? "system"}
+        onThemeChange={(theme) => setVaultData(bumpVersion({ ...data, uiSettings: { ...data.uiSettings, theme } }))}
+      />
       <main className="w-full px-4 pb-[calc(var(--safe-bottom)+5.5rem)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-4 md:ml-60 md:w-[calc(100%-15rem)] md:px-8 md:pb-8 md:pt-[calc(1.25rem+var(--safe-top))]">
-        {shouldShowStatus(status) && <div className="mb-4"><StatusBar status={status} /></div>}
-        <Suspense fallback={<StatusBar status={{ tone: "info", text: "正在加载页面" }} />}>
-          <PageTransition key={viewId}>{content}</PageTransition>
-        </Suspense>
+        <div className="mx-auto w-full max-w-7xl space-y-4">
+          {shouldShowStatus(status) && <StatusBar status={status} />}
+          <Suspense fallback={<StatusBar status={{ tone: "info", text: "正在加载页面" }} />}>
+            <PageTransition key={viewId}>{content}</PageTransition>
+          </Suspense>
+        </div>
       </main>
       <SyncResolutionPanel
         resolution={syncResolution}
@@ -118,6 +130,7 @@ export function App() {
         clear={() => setSyncResolution(undefined)}
         setMessage={showAppMessage}
       />
+      <ToastViewport />
     </div>
   );
 }
@@ -156,19 +169,41 @@ function syncCurrentData(options: {
 function handleAutoSyncResult(
   result: SyncResult,
   options: {
+    readonly data: AppData;
     readonly setData: (data: AppData) => void;
     readonly setResolution: (resolution: SyncResolution) => void;
     readonly setMessage: (value: string) => void;
   },
 ): void {
   if ((result.status === "remote-newer" || result.status === "merged") && result.remoteData) {
-    options.setData(result.remoteData);
+    options.setData(withLocalUiSettings(result.remoteData, options.data));
+    markSuccessfulAutoSync(options.data);
     options.setMessage(result.status === "merged" ? "已自动合并本地与远端账本" : "已同步远端账本到本地");
+    return;
+  }
+  if (result.status === "uploaded" || result.status === "up-to-date") {
+    markSuccessfulAutoSync(options.data);
     return;
   }
   if (isResolutionResult(result)) {
     options.setResolution({ status: result.status, remoteData: result.remoteData });
   }
+}
+
+function markSuccessfulAutoSync(data: AppData): void {
+  markSyncedTargets(readSyncLastSyncedAt(), data.syncSettings ?? EMPTY_SYNC_SETTINGS, undefined, new Date().toISOString());
+}
+
+function withLocalUiSettings(data: AppData, localData: AppData): AppData {
+  return {
+    ...data,
+    uiSettings: {
+      ...data.uiSettings,
+      ...localData.uiSettings,
+      theme: localData.uiSettings?.theme ?? data.uiSettings?.theme ?? "system",
+      syncTargetLastSyncedAt: undefined,
+    },
+  };
 }
 
 function renderView(options: {
@@ -185,7 +220,8 @@ function renderView(options: {
   }
   const props = { data: options.data, setData: options.setVaultData };
   if (options.viewId === "entry") return <EntryView data={options.data} setData={options.setVaultData} setStatus={options.setStatus} />;
-  if (options.viewId === "transactions") return <TransactionsView {...props} />;
+  if (options.viewId === "transactions") return <TransactionsView {...props} setViewId={options.setViewId} />;
+  if (options.viewId === "statements") return <CreditStatementsView {...props} onBack={() => navigateToView("transactions", options.setViewId)} />;
   if (options.viewId === "accounts") return <AccountsView {...props} />;
   if (options.viewId === "budget") return <BudgetView {...props} />;
   if (options.viewId === "stats") return <StatsView data={options.data} onFilter={(filter) => navigateToTransactions(filter, options.setViewId)} />;
@@ -206,6 +242,11 @@ function navigateToTransactions(
   if (filter.currency) params.set("currency", filter.currency);
   window.history.pushState(null, "", `${VIEW_PATHS.transactions}?${params.toString()}`);
   setViewId("transactions");
+}
+
+function navigateToView(id: ViewId, setViewId: (id: ViewId) => void): void {
+  window.history.pushState(null, "", VIEW_PATHS[id]);
+  setViewId(id);
 }
 
 function applyTheme(theme: ThemeMode) {

@@ -13,7 +13,7 @@ const TERMINATOR = "aws4_request";
 export async function readS3(target: SyncTarget): Promise<RemoteSnapshot | undefined> {
   const request = await signedRequest(target, "GET");
   const response = await s3Fetch(request.url, { method: "GET", headers: request.headers });
-  const payload = await readRemotePayloadResponse(response, "S3-Compatible");
+  const payload = await readRemotePayloadResponse(response, "S3-Compatible", { htmlMessage: s3HtmlResponseError(request.url) });
   return payload ? { payload, version: response.headers.get("etag") ?? undefined } : undefined;
 }
 
@@ -71,6 +71,15 @@ function s3NetworkError(url: string, error: unknown): Error {
     + `原始错误：${detail}`,
     { cause: error },
   );
+}
+
+function s3HtmlResponseError(url: string): string {
+  const host = new URL(url).host;
+  const corsText = host.includes("myqcloud.com") ? "腾讯云 COS Bucket CORS" : "Bucket CORS";
+  return "远端返回了 HTML 页面。"
+    + `若控制台有 CORS 报错，请配置 ${corsText}：允许当前站点 Origin、GET/PUT/DELETE/OPTIONS、`
+    + "Authorization/content-type/x-amz-content-sha256/x-amz-date/if-match，并暴露 ETag。"
+    + "否则请检查 Endpoint 是否为对象存储 API 域名，以及 Bucket/Object Key 是否正确。";
 }
 
 async function authorizationHeader(

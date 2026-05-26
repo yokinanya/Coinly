@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { buildReportIndex } from "../../domain/analytics";
 import type { ReportEntry } from "../../domain/analytics";
-import { budgetPeriodRange, createBase, foreignBudgetSpendingEntries, spendingForBudgetPeriodEntries, upsertEntity } from "../../domain/operations";
+import { budgetPeriodRange, createBase, spendingForBudgetPeriodEntries, upsertEntity } from "../../domain/operations";
 import type { Budget } from "../../domain/types";
 import { ConfirmDialog, EmptyState } from "../common";
 import { money } from "../format";
 import { BUDGET_PERIOD_LABELS } from "../labels";
-import { Button } from "../metis";
+import { Button } from "../components";
 import { removeEntity, requireName, requirePositive, runUpdate } from "./managerActions";
 import { Field, ManagerDrawer, SelectField } from "./ManagerCommon";
 import type { ManagerProps } from "./ManagerCommon";
@@ -73,11 +73,10 @@ function BudgetCard(props: {
   readonly onDelete: (budget: Budget) => void;
 }) {
   const spent = spendingForBudgetPeriodEntries(props.entries, props.budget);
-  const foreign = foreignBudgetSpendingEntries(props.entries, props.budget);
   const percent = Math.min(100, Math.round((spent / props.budget.amount) * 100));
   return (
     <article className="panel flex min-h-44 flex-col justify-between gap-4 p-4">
-      <BudgetSummary budget={props.budget} spent={spent} percent={percent} foreignCount={foreign.length} />
+      <BudgetSummary budget={props.budget} spent={spent} percent={percent} />
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => props.onEdit(props.budget)}>编辑</Button>
         <Button variant="danger" onClick={() => props.onDelete(props.budget)}>删除</Button>
@@ -90,7 +89,6 @@ function BudgetSummary(props: {
   readonly budget: Budget;
   readonly spent: number;
   readonly percent: number;
-  readonly foreignCount: number;
 }) {
   const [start, end] = budgetPeriodRange(props.budget);
   return (
@@ -104,7 +102,6 @@ function BudgetSummary(props: {
       </div>
       <p className="mt-2 text-sm">{money(props.spent, props.budget.currency)} / {money(props.budget.amount, props.budget.currency)}</p>
       <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{dateRange(start, end)}</p>
-      {props.foreignCount > 0 && <p className="mt-2 text-xs text-[var(--color-warning)]">异币种支出 {props.foreignCount} 条</p>}
     </div>
   );
 }

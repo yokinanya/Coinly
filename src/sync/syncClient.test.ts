@@ -162,6 +162,15 @@ describe("syncClient", () => {
       .rejects.toThrow("S3-Compatible 跨域或网络请求失败");
   });
 
+  it("suggests Tencent COS CORS settings for HTML responses", async () => {
+    stubFetch([new Response("<!doctype html><title>403</title>", { status: 200 })]);
+
+    await expect(testSyncTarget({
+      ...s3Target({ forcePathStyle: true }),
+      endpoint: "https://cos.ap-guangzhou.myqcloud.com",
+    })).rejects.toThrow("请配置 腾讯云 COS Bucket CORS");
+  });
+
 });
 
 function signedHeaderShape() {

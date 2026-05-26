@@ -5,12 +5,16 @@ export interface RemoteSnapshot {
   readonly version?: string;
 }
 
-export async function readRemotePayloadResponse(response: Response, label: string): Promise<string | undefined> {
+export async function readRemotePayloadResponse(
+  response: Response,
+  label: string,
+  options: { readonly htmlMessage?: string } = {},
+): Promise<string | undefined> {
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`读取 ${label} 加密包失败：${response.status} ${response.statusText}`);
   const body = await response.text();
   if (HTML_RESPONSE_PATTERN.test(body)) {
-    throw new Error(`${label} 远端返回了 HTML 页面，请检查同步配置或重新授权`);
+    throw new Error(options.htmlMessage ?? `${label} 远端返回了 HTML 页面，请检查同步配置或重新授权`);
   }
   return body;
 }

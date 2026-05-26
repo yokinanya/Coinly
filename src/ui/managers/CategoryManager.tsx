@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createBase, upsertEntity } from "../../domain/operations";
 import type { Category } from "../../domain/types";
 import { ConfirmDialog, EmptyState } from "../common";
-import { Button, List } from "../metis";
+import { Button, List } from "../components";
 import { removeEntity, requireName, runUpdate } from "./managerActions";
 import { Field, ManagerDrawer, SelectField } from "./ManagerCommon";
 import type { ManagerProps } from "./ManagerCommon";

@@ -3,7 +3,7 @@ import type { AppData } from "../domain/types";
 import { saveData, type SaveToken } from "../storage/indexedDb";
 import { changeVaultPassphrase, clearRememberedDevice, isRememberedDeviceEnabled, rememberCurrentDevice } from "../storage/vaultSession";
 import { TextField } from "./common";
-import { Button, Modal, Switch } from "./metis";
+import { Button, Modal, Switch } from "./components";
 
 export function DataSecurityPanel(props: {
   readonly data: AppData;

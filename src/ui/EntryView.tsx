@@ -10,7 +10,8 @@ import { ErrorBanner, MessageBanner, PageHeader, SectionPanel, SuccessBanner } f
 import type { StatusMessage } from "./common";
 import { money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
-import { Button, Input, Upload } from "./metis";
+import { Button, Input, Upload } from "./components";
+import { Message } from "./toastApi";
 import { TransactionForm } from "./TransactionForm";
 import { initialTransactionDraft } from "./transactionDraft";
 
@@ -25,19 +26,18 @@ export function EntryView(props: EntryViewProps) {
   const [candidate, setCandidate] = useState<TransactionDraft>();
   const [aiText, setAiText] = useState("");
   const [message, setMessage] = useState("");
-  const saveDraft = () => saveTransactionDraft({ props, draft, setDraft, setMessage });
+  const [saving, setSaving] = useState(false);
+  const saveDraft = () => saveTransactionDraft({ props, draft, saving, setDraft, setMessage, setSaving });
 
   return (
     <section className="space-y-5">
       <PageHeader title="记账" />
       <div className="space-y-4">
-        <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
-          <TransactionForm data={props.data} draft={draft} onChange={setDraft} onSubmit={saveDraft} submitLabel="保存交易" />
-          <AiPanel data={props.data} text={aiText} setText={setAiText} setCandidate={setCandidate} />
-        </div>
+        <AiPanel data={props.data} text={aiText} setText={setAiText} setCandidate={setCandidate} />
         {candidate && <CandidatePanel value={candidate} onUse={() => applyCandidate({ candidate, setDraft, setCandidate, setMessage, setStatus: props.setStatus })} onCancel={() => setCandidate(undefined)} />}
         <ErrorBanner message={message.includes("失败") || message.includes("请先") ? message : ""} />
         <SuccessBanner message={message && !message.includes("失败") && !message.includes("请先") ? message : ""} />
+        <TransactionForm data={props.data} draft={draft} onChange={setDraft} onSubmit={saveDraft} submitLabel="保存交易" submitting={saving} />
       </div>
     </section>
   );
@@ -59,15 +59,17 @@ function AiPanel(props: {
   };
   return (
     <div className="panel space-y-4 p-4">
-      <h2 className="font-semibold text-[var(--color-text)]">AI 记账解析</h2>
-      <Input.TextArea autoSize={{ minRows: 1, maxRows: 6 }} value={props.text} onChange={(value) => props.setText(String(value))} placeholder="例如：星巴克 38 元，餐饮，今天下午" />
-      <AiMessage state={state} />
-      <div className="flex flex-wrap gap-2">
-        <Button loading={pending} disabled={pending} onClick={parseText}><Sparkles size={16} />解析文本</Button>
-        <Upload accept="image/*" beforeUpload={parseImage} disabled={!supportsVision} maxCount={1} showUploadList={false}>
-          <Button loading={pending} disabled={pending || !supportsVision} icon={<Camera size={16} />}>解析图片</Button>
-        </Upload>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-semibold text-[var(--color-text)]">AI 记账解析</h2>
+        <div className="flex flex-wrap gap-2">
+          <Button loading={pending} disabled={pending} onClick={parseText}><Sparkles size={16} />解析文本</Button>
+          <Upload accept="image/*" beforeUpload={parseImage} disabled={!supportsVision} maxCount={1} showUploadList={false}>
+            <Button loading={pending} disabled={pending || !supportsVision} icon={<Camera size={16} />}>解析图片</Button>
+          </Upload>
+        </div>
       </div>
+      <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} value={props.text} onChange={(value) => props.setText(String(value))} placeholder="例如：星巴克 38 元，餐饮，今天下午" />
+      <AiMessage state={state} />
       {!supportsVision && <p className="text-xs text-[var(--color-text-secondary)]">当前 AI 模型不支持图片解析，请在设置中更换多模态模型或手动开启图片能力。</p>}
     </div>
   );
@@ -90,11 +92,11 @@ function CandidatePanel(props: {
 }) {
   return (
     <SectionPanel title="识别结果">
-      <div className="grid gap-2 text-sm text-[var(--color-text-secondary)] md:grid-cols-4">
-        <span>{TRANSACTION_KIND_LABELS[props.value.kind]}</span>
-        <span>{money(props.value.amount, props.value.currency)}</span>
-        <span>{new Date(props.value.occurredAt).toLocaleString("zh-CN")}</span>
-        <span className="truncate">{props.value.note || "无备注"}</span>
+      <div className="grid gap-3 text-sm md:grid-cols-4">
+        <CandidateItem label="类型" value={TRANSACTION_KIND_LABELS[props.value.kind]} />
+        <CandidateItem label="金额" value={money(props.value.amount, props.value.currency)} />
+        <CandidateItem label="日期" value={new Date(props.value.occurredAt).toLocaleString("zh-CN")} />
+        <CandidateItem label="备注" value={props.value.note || "无备注"} />
       </div>
       <div className="mt-3 flex gap-2">
         <Button variant="primary" onClick={props.onUse}>填入表单</Button>
@@ -104,21 +106,38 @@ function CandidatePanel(props: {
   );
 }
 
+function CandidateItem(props: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="row-card min-w-0 p-3">
+      <div className="text-xs text-[var(--color-text-secondary)]">{props.label}</div>
+      <div className="mt-1 truncate font-medium text-[var(--color-text)]">{props.value}</div>
+    </div>
+  );
+}
+
 function saveTransactionDraft(options: {
   readonly props: EntryViewProps;
   readonly draft: TransactionDraft;
+  readonly saving: boolean;
   readonly setDraft: (draft: TransactionDraft) => void;
   readonly setMessage: (value: string) => void;
+  readonly setSaving: (value: boolean) => void;
 }) {
+  if (options.saving) return;
+  options.setSaving(true);
   const result = validateDraft(options.props.data, options.draft);
   if (!result.valid) {
     options.setMessage(result.errors.join("；"));
+    Message.error(result.errors.join("；"));
+    options.setSaving(false);
     return;
   }
   const updated = withRecentEntry(upsertTransaction(options.props.data, createTransaction(options.draft)), options.draft);
   options.props.setData(updated);
   options.setDraft(initialDraft(updated));
   options.setMessage("交易已保存");
+  Message.success("交易已保存");
+  window.setTimeout(() => options.setSaving(false), 200);
 }
 
 function initialDraft(data: AppData): TransactionDraft {
@@ -151,6 +170,7 @@ function withRecentEntry(data: AppData, draft: TransactionDraft): AppData {
   return {
     ...data,
     uiSettings: {
+      ...data.uiSettings,
       theme: data.uiSettings?.theme ?? "system",
       recentEntry: recentEntry(draft),
     },
@@ -195,4 +215,5 @@ function applyCandidate(options: {
   options.setCandidate(undefined);
   options.setMessage("已填入表单");
   options.setStatus({ tone: "info", text: "识别结果已填入表单" });
+  Message.info("识别结果已填入表单");
 }

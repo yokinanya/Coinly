@@ -2,7 +2,7 @@ import { Camera, ImageUp, Lock, ShieldCheck, Upload as UploadIcon, X } from "luc
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { StoredVaultState } from "../storage/indexedDb";
 import type { StatusMessage } from "./common";
-import { Button, Input, Modal, Switch, Upload } from "./metis";
+import { Button, Input, Modal, Switch, Upload } from "./components";
 import { createQrDetector, decodeQrImage, firstQrValue, hasQrScannerSupport } from "./qrScanner";
 
 export interface VaultGateSubmitOptions {

@@ -12,7 +12,7 @@ import { exportSyncSettingsPackage } from "../sync/syncSettingsPackage";
 import { syncSettingsQrDataUrl } from "../sync/syncSettingsQr";
 import { clearRememberedDevice, lockVault } from "../storage/vaultSession";
 import { ConfirmDialog } from "./common";
-import { Button, Checkbox, Modal, Upload } from "./metis";
+import { Button, Checkbox, Modal, Upload } from "./components";
 import { DataSecurityPanel } from "./DataSecurityPanel";
 import { SettingsSection } from "./settingsSection";
 import { targetIdentity } from "./syncTargetHelpers";

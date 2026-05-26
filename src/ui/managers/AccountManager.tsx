@@ -4,7 +4,7 @@ import { createBase, upsertEntity, validStatementDay } from "../../domain/operat
 import type { Account } from "../../domain/types";
 import { ConfirmDialog, MultiSelectField } from "../common";
 import { ACCOUNT_KIND_LABELS } from "../labels";
-import { Button } from "../metis";
+import { Button } from "../components";
 import { optionalNumber, removeEntity, requireName, runUpdate } from "./managerActions";
 import { Field, ManagerDrawer, SelectField } from "./ManagerCommon";
 import type { ManagerProps } from "./ManagerCommon";

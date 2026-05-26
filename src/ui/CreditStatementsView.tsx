@@ -4,18 +4,17 @@ import { deleteStatement, revokeStatementSettlement, settleStatement, statementD
 import type { AppData, CreditCardStatement, CurrencyCode, Transaction } from "../domain/types";
 import { ConfirmDialog, EmptyState, ErrorBanner, SelectField, SuccessBanner, TextField } from "./common";
 import { money } from "./format";
-import { Button, Drawer } from "./metis";
+import { Button, Drawer } from "./components";
 import { AnimatedRow } from "./managers/ManagerCommon";
 
 const DETAIL_DRAWER_WIDTH = 520;
 const SETTLEMENT_DRAWER_WIDTH = 440;
 const CREDIT_STATEMENTS_DRAWER_WIDTH = 760;
 
-export function CreditStatementsDrawer(props: {
-  readonly open: boolean;
+export function CreditStatementsView(props: {
   readonly data: AppData;
   readonly setData: (data: AppData) => void;
-  readonly onClose: () => void;
+  readonly onBack: () => void;
 }) {
   const creditAccounts = props.data.accounts.filter((account) => account.kind === "credit");
   const [message, setMessage] = useState("");
@@ -30,13 +29,31 @@ export function CreditStatementsDrawer(props: {
     }
   };
   return (
-    <Drawer open={props.open} title="信用卡账期" width={CREDIT_STATEMENTS_DRAWER_WIDTH} onClose={props.onClose}>
-      <div className="space-y-4">
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-[var(--color-text)]">信用卡账期</h1>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">生成、查看并结算信用卡账期。</p>
+        </div>
+        <Button onClick={props.onBack}>返回明细</Button>
+      </div>
       <StatusMessage message={message} />
       <StatementActions creditAccounts={creditAccounts} onCreate={createStatement} />
       <StatementGrid data={props.data} setData={props.setData} setMessage={setMessage} />
       {creditAccounts.length === 0 && <EmptyState>暂无信用卡账户。</EmptyState>}
-      </div>
+    </section>
+  );
+}
+
+export function CreditStatementsDrawer(props: {
+  readonly open: boolean;
+  readonly data: AppData;
+  readonly setData: (data: AppData) => void;
+  readonly onClose: () => void;
+}) {
+  return (
+    <Drawer open={props.open} title="信用卡账期" width={CREDIT_STATEMENTS_DRAWER_WIDTH} onClose={props.onClose}>
+      <CreditStatementsView data={props.data} setData={props.setData} onBack={props.onClose} />
     </Drawer>
   );
 }

@@ -71,7 +71,7 @@ function Bar(props: { readonly label: string; readonly value: number; readonly m
         <span>{money(props.value, props.currency)}</span>
       </div>
       <div className="h-2 rounded bg-[var(--color-surface-muted)]">
-        <div className={`h-2 rounded ${color}`} style={{ width }} />
+        <div className={`h-2 rounded transition-[width] duration-300 ${color}`} style={{ width }} />
       </div>
     </div>
   );
@@ -83,11 +83,16 @@ function RankSection(props: {
   readonly rows: readonly RankRow[];
   readonly onFilter: (row: RankRow) => void;
 }) {
+  const groups = rankGroups(props.rows);
   return (
     <SectionPanel title={props.title}>
       {props.rows.length === 0
         ? <p className="text-sm text-[var(--color-text-secondary)]">{props.emptyText}</p>
-        : <div className="grid gap-2">{props.rows.map((row) => <FadeIn key={`${row.id}:${row.currency}`}><RankButton row={row} onFilter={props.onFilter} /></FadeIn>)}</div>}
+        : (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {groups.map((group) => <RankGroup key={group.currency} group={group} onFilter={props.onFilter} />)}
+          </div>
+        )}
     </SectionPanel>
   );
 }
@@ -99,17 +104,75 @@ interface RankRow {
   readonly amount: number;
 }
 
-function RankButton(props: { readonly row: RankRow; readonly onFilter: (row: RankRow) => void }) {
+interface RankGroupData {
+  readonly currency: CurrencyCode;
+  readonly total: number;
+  readonly rows: readonly RankRow[];
+}
+
+function RankGroup(props: { readonly group: RankGroupData; readonly onFilter: (row: RankRow) => void }) {
   return (
-    <button className="row-card flex items-center justify-between gap-3 p-3 text-left text-sm" onClick={() => props.onFilter(props.row)}>
-      <span>
-        <span className="block font-medium text-[var(--color-text)]">{props.row.label}</span>
-        <span className="text-xs text-[var(--color-text-secondary)]">{props.row.currency}</span>
+    <div className="row-card overflow-hidden bg-[var(--color-surface)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+        <span className="text-sm font-semibold text-[var(--color-text)]">{props.group.currency}</span>
+        <span className="text-sm font-semibold tabular-nums text-[var(--color-text)]">{money(props.group.total, props.group.currency)}</span>
+      </div>
+      <div className="divide-y divide-[var(--color-border)]">
+        {props.group.rows.map((row, index) => (
+          <FadeIn key={`${row.id}:${row.currency}`}>
+            <RankButton
+              max={props.group.rows[0]?.amount ?? 1}
+              rank={index + 1}
+              row={row}
+              total={props.group.total}
+              onFilter={props.onFilter}
+            />
+          </FadeIn>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RankButton(props: {
+  readonly row: RankRow;
+  readonly rank: number;
+  readonly max: number;
+  readonly total: number;
+  readonly onFilter: (row: RankRow) => void;
+}) {
+  const percent = props.total > 0 ? Math.round((props.row.amount / props.total) * 100) : 0;
+  const width = `${Math.max(4, (props.row.amount / Math.max(props.max, 1)) * 100)}%`;
+  return (
+    <button className="motion-press grid w-full gap-2 px-4 py-3 text-left text-sm hover:bg-[var(--color-surface-muted)]" onClick={() => props.onFilter(props.row)}>
+      <span className="flex min-w-0 items-center justify-between gap-4">
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-[var(--color-surface-muted)] text-xs font-semibold text-[var(--color-text-secondary)]">{props.rank}</span>
+          <span className="truncate font-medium text-[var(--color-text)]">{props.row.label}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2 font-semibold tabular-nums text-[var(--color-text)]">
+          {money(props.row.amount, props.row.currency)}
+          <ListFilter size={15} className="text-[var(--color-text-muted)]" />
+        </span>
       </span>
-      <span className="flex items-center gap-2 text-[var(--color-text)]">
-        {money(props.row.amount, props.row.currency)}
-        <ListFilter size={16} />
+      <span className="grid grid-cols-[minmax(0,1fr)_3rem] items-center gap-3">
+        <span className="h-2 overflow-hidden rounded bg-[var(--color-surface-muted)]">
+          <span className="block h-full rounded bg-[var(--color-error)] transition-[width] duration-300" style={{ width }} />
+        </span>
+        <span className="text-right text-xs tabular-nums text-[var(--color-text-secondary)]">{percent}%</span>
       </span>
     </button>
   );
+}
+
+function rankGroups(rows: readonly RankRow[]): readonly RankGroupData[] {
+  const groups = rows.reduce<Map<CurrencyCode, RankRow[]>>((result, row) => {
+    result.set(row.currency, [...(result.get(row.currency) ?? []), row]);
+    return result;
+  }, new Map());
+  return [...groups.entries()].map(([currency, groupRows]) => ({
+    currency,
+    rows: groupRows,
+    total: groupRows.reduce((total, row) => total + row.amount, 0),
+  }));
 }

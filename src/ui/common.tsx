@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
+import { useRef, useState } from "react";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import { Alert, DatePicker, Input, Modal, Select, Tag } from "./metis";
+import { Alert, FloatingMenu, Input, Modal, Select, Tag } from "./components";
 import { FadeIn } from "./motion";
 
 export type StatusTone = "info" | "success" | "warning" | "error";
@@ -17,12 +18,9 @@ export interface FormOption {
 }
 
 export function PageHeader(props: { readonly title: string; readonly actions?: ReactNode }) {
-  return (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <h1 className="text-[var(--text-xl)] font-semibold leading-[var(--leading-tight)] text-[var(--color-text)]">{props.title}</h1>
-      {props.actions && <div className="flex flex-wrap items-center gap-2">{props.actions}</div>}
-    </header>
-  );
+  void props.title;
+  if (!props.actions) return null;
+  return <div className="flex flex-wrap justify-end gap-2">{props.actions}</div>;
 }
 
 export function SectionPanel(props: { readonly title?: string; readonly children: ReactNode }) {
@@ -96,7 +94,7 @@ export function SelectField(props: {
   readonly onChange: (value: string) => void;
 }) {
   return (
-    <label>
+    <label className="block w-full">
       <span className="label">{props.label}</span>
       <Select className="mt-2 w-full" value={props.value} options={[...props.options]} onChange={(value) => props.onChange(String(value))} />
     </label>
@@ -110,7 +108,7 @@ export function MultiSelectField(props: {
   readonly onChange: (values: readonly string[]) => void;
 }) {
   return (
-    <label>
+    <label className="block w-full">
       <span className="label">{props.label}</span>
       <Select
         className="mt-2 w-full"
@@ -130,19 +128,10 @@ export function DateField(props: {
   readonly disabledDate?: (date: Dayjs) => boolean;
   readonly onChange: (value: string) => void;
 }) {
-  const value = props.value ? dayjs(props.value) : undefined;
-  const format = props.showTime ? "YYYY-MM-DD HH:mm" : "YYYY-MM-DD";
   return (
-    <label>
+    <label className="block w-full">
       <span className="label">{props.label}</span>
-      <DatePicker
-        className="mt-2 w-full"
-        format={format}
-        showTime={props.showTime ? { format: "HH:mm" } : false}
-        value={value?.isValid() ? value : undefined}
-        disabledDate={props.disabledDate}
-        onChange={(_dateString, date) => props.onChange(formatDateValue(date, Boolean(props.showTime)))}
-      />
+      <DatePicker className="mt-2" value={props.value} showTime={props.showTime} disabledDate={props.disabledDate} onChange={props.onChange} />
     </label>
   );
 }
@@ -153,20 +142,96 @@ export function DateRangeField(props: {
   readonly endAt: string;
   readonly onChange: (value: { readonly startAt: string; readonly endAt: string }) => void;
 }) {
-  const startAt = toValidDay(props.startAt);
-  const endAt = toValidDay(props.endAt);
-  const value = startAt || endAt ? ([startAt, endAt] as [Dayjs | null, Dayjs | null]) : null;
   return (
-    <label>
+    <div>
       <span className="label">{props.label}</span>
-      <DatePicker.RangePicker
-        className="mt-2 w-full"
-        format="YYYY-MM-DD"
-        value={value}
-        onChange={(_dateStrings, dates) => props.onChange(formatDateRangeValue(dates))}
-      />
-    </label>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <DatePicker value={props.startAt} onChange={(startAt) => props.onChange({ startAt, endAt: props.endAt })} />
+        <DatePicker value={props.endAt} onChange={(endAt) => props.onChange({ startAt: props.startAt, endAt: endOfDayValue(endAt) })} />
+      </div>
+    </div>
   );
+}
+
+function DatePicker(props: {
+  readonly className?: string;
+  readonly value: string;
+  readonly showTime?: boolean;
+  readonly disabledDate?: (date: Dayjs) => boolean;
+  readonly onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const selected = toValidDay(props.value) ?? dayjs();
+  const [month, setMonth] = useState(() => selected.startOf("month"));
+  const label = props.value ? formatDateInputValue(props.value, Boolean(props.showTime)) : "选择日期";
+  const choose = (day: Dayjs) => {
+    props.onChange(formatDateValue(day.format("YYYY-MM-DD"), Boolean(props.showTime)));
+    setOpen(false);
+  };
+  return (
+    <>
+      <button ref={triggerRef} className={`field flex items-center justify-between gap-3 text-left ${props.className ?? ""}`} type="button" onClick={() => setOpen((value) => !value)}>
+        <span>{label}</span>
+        <span className="text-xs text-[var(--color-text-muted)]">日历</span>
+      </button>
+      {open && (
+        <FloatingMenu triggerRef={triggerRef} close={() => setOpen(false)} preferredHeight={380}>
+          <CalendarPanel month={month} selected={selected} disabledDate={props.disabledDate} setMonth={setMonth} choose={choose} />
+        </FloatingMenu>
+      )}
+    </>
+  );
+}
+
+function CalendarPanel(props: {
+  readonly month: Dayjs;
+  readonly selected: Dayjs;
+  readonly disabledDate?: (date: Dayjs) => boolean;
+  readonly setMonth: (month: Dayjs) => void;
+  readonly choose: (day: Dayjs) => void;
+}) {
+  return (
+    <div className="ui-calendar">
+      <div className="ui-calendar-header mb-3">
+        <button className="ui-calendar-nav" type="button" aria-label="上个月" onClick={() => props.setMonth(props.month.subtract(1, "month"))}>‹</button>
+        <div className="ui-calendar-title">{props.month.format("YYYY 年 M 月")}</div>
+        <button className="ui-calendar-nav" type="button" aria-label="下个月" onClick={() => props.setMonth(props.month.add(1, "month"))}>›</button>
+      </div>
+      <div className="ui-calendar-grid mb-1 text-center text-xs text-[var(--color-text-muted)]">
+        {["一", "二", "三", "四", "五", "六", "日"].map((day) => <span key={day}>{day}</span>)}
+      </div>
+      <div className="ui-calendar-grid">
+        {calendarDays(props.month).map((day) => <CalendarDay key={day.format("YYYY-MM-DD")} day={day} {...props} />)}
+      </div>
+    </div>
+  );
+}
+
+function CalendarDay(props: {
+  readonly day: Dayjs;
+  readonly month: Dayjs;
+  readonly selected: Dayjs;
+  readonly disabledDate?: (date: Dayjs) => boolean;
+  readonly choose: (day: Dayjs) => void;
+}) {
+  const disabled = Boolean(props.disabledDate?.(props.day));
+  const selected = props.day.isSame(props.selected, "day");
+  const muted = !props.day.isSame(props.month, "month");
+  const className = [
+    "ui-calendar-day",
+    selected ? "ui-calendar-day-selected" : "",
+    muted ? "ui-calendar-day-muted" : "",
+    disabled ? "ui-calendar-day-disabled" : "",
+  ].filter(Boolean).join(" ");
+  return <button className={className} type="button" disabled={disabled} onClick={() => props.choose(props.day)}>{props.day.date()}</button>;
+}
+
+function calendarDays(month: Dayjs): readonly Dayjs[] {
+  const start = month.startOf("month");
+  const offset = (start.day() + 6) % 7;
+  const first = start.subtract(offset, "day");
+  return Array.from({ length: 42 }, (_unused, index) => first.add(index, "day"));
 }
 
 export function CheckableTagList(props: {
@@ -208,18 +273,24 @@ export function TextAreaField(props: {
   );
 }
 
-function formatDateValue(date: Dayjs | Dayjs[] | null, showTime: boolean): string {
-  if (!date || Array.isArray(date)) return "";
+function formatDateValue(value: string, showTime: boolean): string {
+  if (!value) return "";
+  const date = dayjs(value);
+  if (!date.isValid()) throw new Error("日期格式无效");
   return showTime ? date.toDate().toISOString() : date.startOf("day").toDate().toISOString();
 }
 
-function formatDateRangeValue(dates: readonly (Dayjs | null)[] | null): { readonly startAt: string; readonly endAt: string } {
-  if (!dates || dates.length < 2) return { startAt: "", endAt: "" };
-  const [startAt, endAt] = dates;
-  return {
-    startAt: startAt?.startOf("day").toDate().toISOString() ?? "",
-    endAt: endAt?.endOf("day").toDate().toISOString() ?? "",
-  };
+function endOfDayValue(value: string): string {
+  if (!value) return "";
+  const date = dayjs(value);
+  if (!date.isValid()) throw new Error("日期格式无效");
+  return date.endOf("day").toDate().toISOString();
+}
+
+function formatDateInputValue(value: string, showTime: boolean): string {
+  const date = toValidDay(value);
+  if (!date) return "";
+  return showTime ? date.format("YYYY-MM-DDTHH:mm") : date.format("YYYY-MM-DD");
 }
 
 function toValidDay(value: string): Dayjs | null {

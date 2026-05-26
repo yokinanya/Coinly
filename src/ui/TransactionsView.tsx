@@ -4,19 +4,18 @@ import { deleteTransaction, upsertTransaction } from "../domain/operations";
 import { bumpVersion, createTransaction } from "../domain/factory";
 import type { AppData, Transaction, TransactionDraft } from "../domain/types";
 import { ConfirmDialog, ErrorBanner, PageHeader } from "./common";
-import { CreditStatementsDrawer } from "./CreditStatementsView";
 import { TRANSACTION_KIND_LABELS } from "./labels";
-import { Button, Drawer } from "./metis";
+import { Button, Drawer, Modal } from "./components";
 import { TransactionTable } from "./TransactionTable";
 import { TransactionForm } from "./TransactionForm";
 import { visibleSelectedCount, visibleSelectedIds } from "./transactionSelection";
 import { draftFromTransaction } from "./transactionDraft";
+import { VIEW_PATHS, type ViewId } from "./appRoutes";
 
-export function TransactionsView(props: { readonly data: AppData; readonly setData: (data: AppData) => void }) {
+export function TransactionsView(props: { readonly data: AppData; readonly setData: (data: AppData) => void; readonly setViewId: (id: ViewId) => void }) {
   const [editing, setEditing] = useState<Transaction>();
   const [refunding, setRefunding] = useState<TransactionDraft>();
   const [deleting, setDeleting] = useState<Transaction>();
-  const [statementsOpen, setStatementsOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -35,13 +34,13 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
         title="明细"
         actions={(
           <>
-            <Button onClick={() => setStatementsOpen(true)}><ReceiptText size={16} />账期</Button>
+            <Button onClick={() => openStatements(props.setViewId)}><ReceiptText size={16} />账期</Button>
             <Button variant="danger" disabled={selectedVisibleCount === 0} onClick={() => setBatchConfirmOpen(true)}>批量删除 {selectedVisibleCount || ""}</Button>
           </>
         )}
       />
       <ErrorBanner message={message} />
-      <EditorDrawer
+      <EditorModal
         data={props.data}
         value={editing}
         onCancel={() => setEditing(undefined)}
@@ -78,12 +77,16 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
         onCancel={() => setBatchConfirmOpen(false)}
         onConfirm={() => deleteSelectedIds(props, visibleSelectedIds(selectedIds, filteredTransactions), setSelectedIds, setBatchConfirmOpen)}
       />
-      <CreditStatementsDrawer open={statementsOpen} data={props.data} setData={props.setData} onClose={() => setStatementsOpen(false)} />
     </section>
   );
 }
 
-function EditorDrawer(props: {
+function openStatements(setViewId: (id: ViewId) => void): void {
+  window.history.pushState(null, "", VIEW_PATHS.statements);
+  setViewId("statements");
+}
+
+function EditorModal(props: {
   readonly data: AppData;
   readonly value?: Transaction;
   readonly onCancel: () => void;
@@ -96,7 +99,7 @@ function EditorDrawer(props: {
     ? <div className="flex justify-end gap-2"><Button onClick={props.onCancel}>取消</Button><Button variant="primary" onClick={() => props.onSave(current)}>保存</Button></div>
     : undefined;
   return (
-    <Drawer open={Boolean(props.value)} title="编辑交易" width={520} footer={footer} onClose={props.onCancel}>
+    <Modal open={Boolean(props.value)} title="编辑交易" width="min(44rem, calc(100vw - 2rem))" footer={footer} onCancel={props.onCancel}>
       {current && editing && (
         <TransactionForm
           embedded
@@ -107,7 +110,7 @@ function EditorDrawer(props: {
           submitLabel="保存修改"
         />
       )}
-    </Drawer>
+    </Modal>
   );
 }
 
