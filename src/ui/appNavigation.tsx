@@ -1,4 +1,4 @@
-import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, MonitorCog, Moon, PieChart, PlusCircle, Settings, Sparkles, Sun, Tags, Wallet, X } from "lucide-react";
+import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, MonitorCog, Moon, PieChart, PlusCircle, RefreshCw, Settings, Sparkles, Sun, Tags, Wallet, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ThemeMode } from "../domain/types";
 import { pushViewPath, type ViewId } from "./appRoutes";
@@ -24,6 +24,9 @@ export function NavigationSidebar(props: {
   readonly setViewId: (id: ViewId) => void;
   readonly theme: ThemeMode;
   readonly onThemeChange: (theme: ThemeMode) => void;
+  readonly syncDisabled: boolean;
+  readonly syncing: boolean;
+  readonly onSync: () => void;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const items = useNavigationItems();
@@ -35,7 +38,7 @@ export function NavigationSidebar(props: {
     <>
       <MobileHeader openMenu={() => setMobileOpen(true)} goHome={() => select("home")} />
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-[var(--color-border)] bg-[var(--color-surface)] md:block">
-        <SidebarContent items={items} viewId={props.viewId} theme={props.theme} onThemeChange={props.onThemeChange} onSelect={select} />
+        <SidebarContent items={items} viewId={props.viewId} theme={props.theme} syncDisabled={props.syncDisabled} syncing={props.syncing} onThemeChange={props.onThemeChange} onSync={props.onSync} onSelect={select} />
       </aside>
       <Drawer
         className={{ body: "drawer-body-full p-0", content: "bg-transparent" }}
@@ -46,7 +49,7 @@ export function NavigationSidebar(props: {
         placement="left"
         onClose={() => setMobileOpen(false)}
       >
-        <SidebarContent items={items} viewId={props.viewId} theme={props.theme} onThemeChange={props.onThemeChange} onSelect={select} compact onClose={() => setMobileOpen(false)} />
+        <SidebarContent items={items} viewId={props.viewId} theme={props.theme} syncDisabled={props.syncDisabled} syncing={props.syncing} onThemeChange={props.onThemeChange} onSync={props.onSync} onSelect={select} compact onClose={() => setMobileOpen(false)} />
       </Drawer>
     </>
   );
@@ -74,7 +77,10 @@ function SidebarContent(props: {
   readonly items: ReturnType<typeof useNavigationItems>;
   readonly viewId: ViewId;
   readonly theme: ThemeMode;
+  readonly syncDisabled: boolean;
+  readonly syncing: boolean;
   readonly onThemeChange: (theme: ThemeMode) => void;
+  readonly onSync: () => void;
   readonly onSelect: (id: ViewId) => void;
   readonly compact?: boolean;
   readonly onClose?: () => void;
@@ -109,10 +115,26 @@ function SidebarContent(props: {
           </button>
         ))}
       </nav>
-      <footer className="mt-4 flex justify-end border-t border-[var(--color-border)] px-2 pt-4">
+      <footer className="mt-4 flex justify-end gap-2 border-t border-[var(--color-border)] px-2 pt-4">
+        <SyncButton disabled={props.syncDisabled} syncing={props.syncing} onSync={props.onSync} />
         <ThemeButton theme={props.theme} onChange={props.onThemeChange} />
       </footer>
     </div>
+  );
+}
+
+function SyncButton(props: { readonly disabled: boolean; readonly syncing: boolean; readonly onSync: () => void }) {
+  return (
+    <button
+      className="motion-press grid h-10 w-10 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
+      type="button"
+      title="同步"
+      aria-label="同步"
+      disabled={props.disabled || props.syncing}
+      onClick={props.onSync}
+    >
+      <RefreshCw className={props.syncing ? "animate-spin" : undefined} size={18} />
+    </button>
   );
 }
 

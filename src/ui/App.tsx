@@ -43,6 +43,7 @@ export function App() {
   const [status, setStatus] = useState<StatusMessage>({ tone: "info", text: "正在加载本地账本" });
   const syncTimerRef = useRef<number | undefined>(undefined);
   const syncingRef = useRef(false);
+  const [manualSyncing, setManualSyncing] = useState(false);
   const updateSaveToken = useCallback((token: SaveToken) => {
     saveTokenRef.current = token;
     setSaveToken(token);
@@ -112,7 +113,10 @@ export function App() {
         viewId={viewId}
         setViewId={setViewId}
         theme={data.uiSettings?.theme ?? "system"}
+        syncDisabled={!hasEnabledSyncTarget(data.syncSettings)}
+        syncing={manualSyncing}
         onThemeChange={(theme) => setVaultData(bumpVersion({ ...data, uiSettings: { ...data.uiSettings, theme } }))}
+        onSync={() => runManualSync({ data, syncingRef, setSyncing: setManualSyncing, setData: setVaultData, setResolution: setSyncResolution, setMessage: showAppMessage })}
       />
       <main className="w-full px-4 pb-[calc(var(--safe-bottom)+5.5rem)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-4 md:ml-60 md:w-[calc(100%-15rem)] md:px-8 md:pb-8 md:pt-[calc(1.25rem+var(--safe-top))]">
         <div className="mx-auto w-full max-w-7xl space-y-4">
@@ -133,6 +137,51 @@ export function App() {
       <ToastViewport />
     </div>
   );
+}
+
+function runManualSync(options: {
+  readonly data: AppData;
+  readonly syncingRef: MutableRefObject<boolean>;
+  readonly setSyncing: (syncing: boolean) => void;
+  readonly setData: (data: AppData) => void;
+  readonly setResolution: (resolution: SyncResolution) => void;
+  readonly setMessage: (value: string) => void;
+}): void {
+  if (options.syncingRef.current) return;
+  options.syncingRef.current = true;
+  options.setSyncing(true);
+  syncData(options.data, options.data.syncSettings)
+    .then((result) => handleManualSyncResult(result, options))
+    .catch((error: unknown) => options.setMessage(errorMessage(error, "同步失败")))
+    .finally(() => {
+      options.syncingRef.current = false;
+      options.setSyncing(false);
+    });
+}
+
+function handleManualSyncResult(
+  result: SyncResult,
+  options: {
+    readonly data: AppData;
+    readonly setData: (data: AppData) => void;
+    readonly setResolution: (resolution: SyncResolution) => void;
+    readonly setMessage: (value: string) => void;
+  },
+): void {
+  if ((result.status === "remote-newer" || result.status === "merged") && result.remoteData) {
+    options.setData(withLocalUiSettings(result.remoteData, options.data));
+    markSuccessfulAutoSync(options.data);
+    options.setMessage(result.status === "merged" ? "已自动合并本地与远端账本" : "已同步远端账本到本地");
+    return;
+  }
+  if (isResolutionResult(result)) {
+    options.setResolution({ status: result.status, remoteData: result.remoteData });
+    return;
+  }
+  if (result.status === "uploaded" || result.status === "up-to-date") {
+    markSuccessfulAutoSync(options.data);
+  }
+  options.setMessage(syncResultMessage(result));
 }
 
 function scheduleAutoSync(options: {
@@ -192,6 +241,10 @@ function handleAutoSyncResult(
 
 function markSuccessfulAutoSync(data: AppData): void {
   markSyncedTargets(readSyncLastSyncedAt(), data.syncSettings ?? EMPTY_SYNC_SETTINGS, undefined, new Date().toISOString());
+}
+
+function hasEnabledSyncTarget(settings?: SyncSettings): boolean {
+  return Boolean(settings?.targets?.some((target) => target.enabled));
 }
 
 function withLocalUiSettings(data: AppData, localData: AppData): AppData {
@@ -262,6 +315,13 @@ function shouldShowStatus(status: StatusMessage): boolean {
 
 function isResolutionResult(result: SyncResult): result is SyncResult & SyncResolution {
   return result.status === "remote-conflict" || result.status === "remote-divergent" || result.status === "remote-plaintext";
+}
+
+function syncResultMessage(result: SyncResult): string {
+  if (result.status === "uploaded") return "同步已上传";
+  if (result.status === "up-to-date") return "远端已是最新";
+  if (result.status === "throttled") return result.reason ?? "自动同步频率控制中，请稍后重试";
+  return "没有开启自动同步的提供方";
 }
 
 function showAppMessage(value: string): void {
