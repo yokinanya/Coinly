@@ -16,6 +16,7 @@ export function BudgetManager({ data, setData, setMessage }: ManagerProps) {
   const [draft, setDraft] = useState<Budget>(() => defaultBudget(defaultCurrency));
   const [pending, setPending] = useState<Budget>();
   const [open, setOpen] = useState(false);
+  const openNewBudget = () => editBudget(defaultBudget(defaultCurrency), setDraft, setOpen);
   const save = () => runUpdate(() => {
     requireName(draft.name);
     requirePositive(draft.amount);
@@ -30,12 +31,12 @@ export function BudgetManager({ data, setData, setMessage }: ManagerProps) {
   return (
     <section className="space-y-4">
       <div className="flex justify-end">
-        <Button variant="primary" onClick={() => editBudget(defaultBudget(defaultCurrency), setDraft, setOpen)}>新建</Button>
+        <Button variant="primary" onClick={openNewBudget}>新建</Button>
       </div>
-      <BudgetCards data={data} onEdit={(budget) => editBudget(budget, setDraft, setOpen)} onDelete={setPending} />
+      <BudgetCards data={data} onCreate={openNewBudget} onEdit={(budget) => editBudget(budget, setDraft, setOpen)} onDelete={setPending} />
       <ManagerDrawer open={open} title="预算" onClose={() => setOpen(false)} onSave={save}>
         <Field label="名称" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
-        <Field label="金额" value={draft.amount} onChange={(amount) => setDraft({ ...draft, amount: Number(amount) })} />
+        <Field label="金额" type="number" inputMode="decimal" min={0} step="0.01" value={draft.amount} onChange={(amount) => setDraft({ ...draft, amount: Number(amount) })} />
         <SelectField label="币种" value={draft.currency} options={data.currencies} onChange={(currency) => setDraft({ ...draft, currency: currency as Budget["currency"] })} />
         <SelectField label="周期" value={draft.period} options={["monthly", "yearly"]} labels={BUDGET_PERIOD_LABELS} onChange={(period) => setDraft({ ...draft, period: period as Budget["period"] })} />
       </ManagerDrawer>
@@ -46,11 +47,12 @@ export function BudgetManager({ data, setData, setMessage }: ManagerProps) {
 
 function BudgetCards(props: {
   readonly data: ManagerProps["data"];
+  readonly onCreate: () => void;
   readonly onEdit: (budget: Budget) => void;
   readonly onDelete: (budget: Budget) => void;
 }) {
   const report = buildReportIndex(props.data);
-  if (props.data.budgets.length === 0) return <EmptyState>暂无预算。</EmptyState>;
+  if (props.data.budgets.length === 0) return <EmptyState action={{ label: "新建预算", onClick: props.onCreate }}>暂无预算。</EmptyState>;
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {props.data.budgets.map((budget) => (

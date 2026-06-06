@@ -5,10 +5,11 @@ import type { AppData, Budget, RecurringRule, Transaction } from "../domain/type
 import { PageHeader } from "./common";
 import { dateOnly, money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
+import { Button } from "./components";
 
 const RECENT_LIMIT = 6;
 
-export function DashboardView({ data }: { readonly data: AppData; readonly setData: (data: AppData) => void }) {
+export function DashboardView({ data, onNavigate }: { readonly data: AppData; readonly setData: (data: AppData) => void; readonly onNavigate?: (id: "entry" | "budget") => void }) {
   const report = useMemo(() => buildReportIndex(data), [data]);
   const pendingRecurring = useMemo(() => data.recurringRules.filter((rule) => rule.enabled), [data.recurringRules]);
   const recentTransactions = useMemo(() => recentTransactionRows(data.transactions), [data.transactions]);
@@ -18,10 +19,10 @@ export function DashboardView({ data }: { readonly data: AppData; readonly setDa
       <PageHeader title="首页" />
       <KpiGrid rows={report.currencySummary} transactionCount={report.currentMonthEntries.length} />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
-        <RecentTransactions rows={recentTransactions} />
+        <RecentTransactions rows={recentTransactions} onEntry={() => onNavigate?.("entry")} />
         <RecurringPanel rules={pendingRecurring} />
       </div>
-      <BudgetPanel data={data} entries={report.entries} />
+      <BudgetPanel data={data} entries={report.entries} onBudget={() => onNavigate?.("budget")} />
     </section>
   );
 }
@@ -67,12 +68,12 @@ function CurrencyKpiCard(props: { readonly row: CurrencySummary }) {
   );
 }
 
-function RecentTransactions(props: { readonly rows: readonly Transaction[] }) {
+function RecentTransactions(props: { readonly rows: readonly Transaction[]; readonly onEntry?: () => void }) {
   return (
     <section className="panel overflow-hidden">
       <PanelTitle title="最近交易" />
       <div className="divide-y divide-(--color-border)">
-        {props.rows.length === 0 && <EmptyLine text="暂无交易。" />}
+        {props.rows.length === 0 && <EmptyLine text="暂无交易。" action={props.onEntry ? { label: "去记账", onClick: props.onEntry } : undefined} />}
         {props.rows.map((row) => <TransactionLine key={row.id} row={row} />)}
       </div>
     </section>
@@ -108,11 +109,11 @@ function RecurringPanel(props: { readonly rules: readonly RecurringRule[] }) {
   );
 }
 
-function BudgetPanel({ data, entries }: { readonly data: AppData; readonly entries: readonly ReportEntry[] }) {
+function BudgetPanel({ data, entries, onBudget }: { readonly data: AppData; readonly entries: readonly ReportEntry[]; readonly onBudget?: () => void }) {
   return (
     <section className="panel p-4">
       <PanelTitle title="预算进度" compact />
-      {data.budgets.length === 0 && <p className="mt-3 text-sm text-(--color-text-secondary)">暂无预算。</p>}
+      {data.budgets.length === 0 && <EmptyLine text="暂无预算。" action={onBudget ? { label: "去预算", onClick: onBudget } : undefined} compact />}
       <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {data.budgets.map((budget) => <BudgetProgress key={budget.id} budget={budget} entries={entries} />)}
       </div>
@@ -145,8 +146,13 @@ function PanelTitle(props: { readonly title: string; readonly compact?: boolean 
   return <h2 className={props.compact ? "font-semibold" : "border-b border-(--color-border) px-4 py-3 font-semibold"}>{props.title}</h2>;
 }
 
-function EmptyLine(props: { readonly text: string }) {
-  return <p className="px-4 py-6 text-sm text-(--color-text-secondary)">{props.text}</p>;
+function EmptyLine(props: { readonly text: string; readonly compact?: boolean; readonly action?: { readonly label: string; readonly onClick: () => void } }) {
+  return (
+    <div className={`${props.compact ? "py-3" : "px-4 py-6"} space-y-3 text-sm text-(--color-text-secondary)`}>
+      <p>{props.text}</p>
+      {props.action && <Button onClick={props.action.onClick}>{props.action.label}</Button>}
+    </div>
+  );
 }
 
 function recentTransactionRows(transactions: readonly Transaction[]): readonly Transaction[] {

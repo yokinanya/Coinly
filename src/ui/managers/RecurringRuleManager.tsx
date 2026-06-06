@@ -52,7 +52,7 @@ export function RecurringRuleManager({ data, setData, setMessage }: ManagerProps
         </div>
         <SelectField label="支付方式" value={draft.transaction.accountId} options={data.accounts.map((item) => item.id)} labels={accountLabels(data.accounts)} onChange={(accountId) => setDraft(changeAccount(draft, data.accounts, accountId))} />
         <SelectField label="支付币种" value={draft.transaction.currency} options={currencyOptions(data.accounts, draft.transaction.accountId)} onChange={(currency) => setDraft({ ...draft, transaction: { ...draft.transaction, currency: currency as CurrencyCode } })} />
-        <Field label="金额" value={draft.transaction.amount} onChange={(amount) => setDraft({ ...draft, transaction: { ...draft.transaction, amount: Number(amount) } })} />
+        <Field label="金额" type="number" inputMode="decimal" min={0} step="0.01" value={draft.transaction.amount} onChange={(amount) => setDraft({ ...draft, transaction: { ...draft.transaction, amount: Number(amount) } })} />
         <SelectField label="分类" value={draft.transaction.categoryId ?? ""} options={categoryOptions(data)} labels={categoryLabels(data)} onChange={(categoryId) => setDraft({ ...draft, transaction: { ...draft.transaction, categoryId: categoryId || undefined } })} />
         <div className="py-0.5">
           <TextAreaField label="备注" value={draft.transaction.note} onChange={(note) => setDraft({ ...draft, transaction: { ...draft.transaction, note } })} />

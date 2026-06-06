@@ -1,4 +1,4 @@
-import type { AppData, EntityBase } from "../domain/types";
+import type { AppData, EntityBase, RecurringRule, Transaction } from "../domain/types";
 import { assertValidAppData } from "../storage/dataValidation";
 
 type CollectionKey = "accounts" | "categories" | "tags" | "transactions" | "recurringRules" | "budgets" | "statements";
@@ -42,9 +42,118 @@ function mergeTwoData(local: AppData, remote: AppData): SyncMergeResult {
 }
 
 function mergeCollection(data: AppData, remote: AppData, key: CollectionKey): SyncMergeResult {
-  const result = mergeEntities(data[key] as readonly EntityBase[], remote[key] as readonly EntityBase[]);
+  const result = key === "transactions"
+    ? mergeTransactions(data.transactions, remote.transactions, data.recurringRules, remote.recurringRules)
+    : mergeEntities(data[key] as readonly EntityBase[], remote[key] as readonly EntityBase[]);
   if (result.conflict) return { conflict: remote };
   return { data: { ...data, [key]: result.entities } };
+}
+
+function mergeTransactions(
+  local: readonly Transaction[],
+  remote: readonly Transaction[],
+  localRules: readonly RecurringRule[],
+  remoteRules: readonly RecurringRule[],
+): { readonly entities?: readonly Transaction[]; readonly conflict?: Transaction } {
+  const result = mergeEntities(local, remote);
+  if (result.conflict || !result.entities) return result;
+  return { entities: mergeRecurringTransactions(result.entities, local, remote, localRules, remoteRules) };
+}
+
+function mergeRecurringTransactions(
+  transactions: readonly Transaction[],
+  local: readonly Transaction[],
+  remote: readonly Transaction[],
+  localRules: readonly RecurringRule[],
+  remoteRules: readonly RecurringRule[],
+): readonly Transaction[] {
+  const localOccurrences = recurringOccurrenceKeys(local);
+  const remoteOccurrences = recurringOccurrenceKeys(remote);
+  const grouped = new Map<string, Transaction[]>();
+  const deletedRecurringTransactionIds = new Set<string>();
+
+  for (const transaction of transactions) {
+    const key = recurringOccurrenceKey(transaction);
+    if (!key) continue;
+    if (shouldDropRecurringTransaction(transaction, key, localOccurrences, remoteOccurrences, localRules, remoteRules)) {
+      deletedRecurringTransactionIds.add(transaction.id);
+      continue;
+    }
+    grouped.set(key, [...(grouped.get(key) ?? []), transaction]);
+  }
+
+  const winners = new Map([...grouped].map(([key, group]) => [key, newestEntity(group)]));
+  const replacementTransactionIds = recurringReplacementIds(grouped, winners);
+  return transactions.flatMap((transaction) => {
+    const key = recurringOccurrenceKey(transaction);
+    if (!key) return resolvedRefundReference(transaction, replacementTransactionIds, deletedRecurringTransactionIds);
+    const winner = winners.get(key);
+    if (!winner || winner.id !== transaction.id) return [];
+    winners.delete(key);
+    return resolvedRefundReference(winner, replacementTransactionIds, deletedRecurringTransactionIds);
+  });
+}
+
+function recurringReplacementIds(
+  grouped: ReadonlyMap<string, readonly Transaction[]>,
+  winners: ReadonlyMap<string, Transaction>,
+): ReadonlyMap<string, string> {
+  const replacements = new Map<string, string>();
+  for (const [key, group] of grouped) {
+    const winner = winners.get(key);
+    if (!winner) continue;
+    group.forEach((transaction) => {
+      if (transaction.id !== winner.id) replacements.set(transaction.id, winner.id);
+    });
+  }
+  return replacements;
+}
+
+function resolvedRefundReference(
+  transaction: Transaction,
+  replacementTransactionIds: ReadonlyMap<string, string>,
+  deletedRecurringTransactionIds: ReadonlySet<string>,
+): readonly Transaction[] {
+  const refundOfTransactionId = transaction.refundOfTransactionId;
+  if (!refundOfTransactionId) return [transaction];
+  const replacementId = replacementTransactionIds.get(refundOfTransactionId);
+  if (replacementId) return [{ ...transaction, refundOfTransactionId: replacementId }];
+  return deletedRecurringTransactionIds.has(refundOfTransactionId) ? [] : [transaction];
+}
+
+function shouldDropRecurringTransaction(
+  transaction: Transaction,
+  key: string,
+  localOccurrences: ReadonlySet<string>,
+  remoteOccurrences: ReadonlySet<string>,
+  localRules: readonly RecurringRule[],
+  remoteRules: readonly RecurringRule[],
+): boolean {
+  const localHasOccurrence = localOccurrences.has(key);
+  const remoteHasOccurrence = remoteOccurrences.has(key);
+  if (localHasOccurrence && remoteHasOccurrence) return false;
+  if (!localHasOccurrence && remoteHasOccurrence) return ruleAdvancedPastOccurrence(localRules, transaction);
+  if (localHasOccurrence && !remoteHasOccurrence) return ruleAdvancedPastOccurrence(remoteRules, transaction);
+  return false;
+}
+
+function recurringOccurrenceKeys(transactions: readonly Transaction[]): ReadonlySet<string> {
+  return new Set(transactions.map(recurringOccurrenceKey).filter(isPresent));
+}
+
+function recurringOccurrenceKey(transaction: Transaction): string | undefined {
+  return transaction.sourceRecurringRuleId
+    ? `${transaction.sourceRecurringRuleId}\u0000${transaction.occurredAt}`
+    : undefined;
+}
+
+function ruleAdvancedPastOccurrence(rules: readonly RecurringRule[], transaction: Transaction): boolean {
+  const rule = rules.find((item) => item.id === transaction.sourceRecurringRuleId);
+  if (!rule) return false;
+  const nextRunAt = Date.parse(rule.nextRunAt);
+  const occurredAt = Date.parse(transaction.occurredAt);
+  if (Number.isNaN(nextRunAt) || Number.isNaN(occurredAt)) return false;
+  return nextRunAt > occurredAt;
 }
 
 function mergeEntities<T extends EntityBase>(
@@ -100,6 +209,12 @@ function dataTimestampForEntity(entity: EntityBase): number {
   return timestamp;
 }
 
+function newestEntity<T extends EntityBase>(entities: readonly T[]): T {
+  return entities.reduce((newest, entity) => {
+    return dataTimestampForEntity(entity) > dataTimestampForEntity(newest) ? entity : newest;
+  });
+}
+
 function canonicalSyncData(data: AppData): string {
   return JSON.stringify({
     ...data,
@@ -128,4 +243,8 @@ function isSameContentAsEverySnapshot(
 ): boolean {
   const value = canonicalContentData(data);
   return [local, ...remotes].every((item) => canonicalContentData(item) === value);
+}
+
+function isPresent<T>(value: T | undefined): value is T {
+  return value !== undefined;
 }

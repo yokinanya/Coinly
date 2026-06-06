@@ -49,8 +49,8 @@ describe("EntryView", () => {
     parseText.mockResolvedValue(aiDraft(data, 38, "星巴克"));
 
     renderEntry(data, setData);
-  fireEvent.change(screen.getByPlaceholderText("例如：星巴克 38 元，餐饮，今天下午"), { target: { value: "星巴克 38" } });
-  fireEvent.click(screen.getByText("解析文本"));
+    fireEvent.change(screen.getByPlaceholderText("例如：星巴克 38 元，餐饮，今天下午"), { target: { value: "星巴克 38" } });
+    fireEvent.click(screen.getByText("解析文本"));
     await screen.findByText("星巴克");
     fireEvent.click(screen.getByText("编辑详情"));
     fireEvent.change(screen.getByDisplayValue("38"), { target: { value: "0" } });
@@ -66,8 +66,8 @@ describe("EntryView", () => {
     parseText.mockResolvedValue(aiDraft(data, 38, "星巴克"));
 
     renderEntry(data, setData);
-  fireEvent.change(screen.getByPlaceholderText("例如：星巴克 38 元，餐饮，今天下午"), { target: { value: "星巴克 38" } });
-  fireEvent.click(screen.getByText("解析文本"));
+    fireEvent.change(screen.getByPlaceholderText("例如：星巴克 38 元，餐饮，今天下午"), { target: { value: "星巴克 38" } });
+    fireEvent.click(screen.getByText("解析文本"));
     await screen.findByText("星巴克");
     fireEvent.click(screen.getByText("编辑详情"));
     fireEvent.change(screen.getByDisplayValue("38"), { target: { value: "45" } });
@@ -92,6 +92,23 @@ describe("EntryView", () => {
     await waitFor(() => expect(setData).toHaveBeenCalledTimes(1));
     const saved = setData.mock.calls[0][0] as AppData;
     expect(saved.transactions[0]?.amount).toBe(12);
+  });
+
+  it("keeps AI entry primary and shows manual field errors after expansion", async () => {
+    const data = initialData();
+    const setData = vi.fn();
+
+    renderEntry(data, setData);
+    expect(screen.getByText("解析文本").closest("button")?.hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText("金额")).toBeNull();
+
+    fireEvent.click(screen.getByText("手工记账"));
+    fireEvent.click(screen.getByText("保存交易"));
+
+    const error = await screen.findByText("金额必须大于 0");
+    expect(error).toBeTruthy();
+    expect(setData).not.toHaveBeenCalled();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByDisplayValue("0")));
   });
 });
 

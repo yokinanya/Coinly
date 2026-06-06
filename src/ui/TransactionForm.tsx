@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { TRANSACTION_KINDS } from "../domain/constants";
 import { accountCurrencyOptions, currencyForAccount } from "../domain/recurring";
 import type { AppData, CurrencyCode, TransactionDraft, TransactionKind } from "../domain/types";
@@ -5,6 +6,10 @@ import { CheckableTagList, DateField, SelectField, TextAreaField, TextField } fr
 import type { FormOption } from "./common";
 import { ACCOUNT_KIND_LABELS, TRANSACTION_KIND_LABELS } from "./labels";
 import { Button } from "./components";
+
+type TransactionFieldName = "accountId" | "amount" | "currency" | "relatedAccountId" | "targetAmount" | "targetCurrency";
+type FieldErrors = Partial<Record<TransactionFieldName, string>>;
+const ERROR_FIELD_ORDER: readonly TransactionFieldName[] = ["accountId", "amount", "currency", "relatedAccountId", "targetAmount", "targetCurrency"];
 
 export function TransactionForm(props: {
   readonly data: AppData;
@@ -16,18 +21,34 @@ export function TransactionForm(props: {
   readonly embedded?: boolean;
   readonly submitting?: boolean;
 }) {
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const formRef = useRef<HTMLDivElement>(null);
   const update = (patch: Partial<TransactionDraft>) => props.onChange({ ...props.draft, ...patch });
+  const updateField = (field: TransactionFieldName, patch: Partial<TransactionDraft>) => {
+    setFieldErrors((current) => withoutError(current, field));
+    update(patch);
+  };
+  const submit = () => {
+    const errors = validateDraftFields(props.draft);
+    setFieldErrors(errors);
+    const firstError = firstErrorField(errors);
+    if (firstError) {
+      focusField(formRef, firstError);
+      return;
+    }
+    props.onSubmit();
+  };
   const accountOptions = props.data.accounts.map((item) => option(item.id, `${item.name} · ${ACCOUNT_KIND_LABELS[item.kind]}`));
   const selectedAccount = props.data.accounts.find((item) => item.id === props.draft.accountId);
   const className = props.embedded ? "grid gap-5 md:grid-cols-2" : "panel grid gap-4 p-4 md:grid-cols-2";
   return (
-    <div className={className}>
-      <SelectField label="类型" value={props.draft.kind} options={kindOptions()} onChange={(value) => updateKind(value as TransactionKind, props.data, props.draft, props.onChange)} />
-      <SelectField label={accountLabel(props.draft.kind)} value={props.draft.accountId} options={accountOptions} onChange={(accountId) => changeAccount(accountId, props.data, props.draft, props.onChange)} />
-      <TextField label="金额" type="number" value={props.draft.amount} onChange={(amount) => update({ amount: Number(amount) })} />
-      <SelectField label="币种" value={props.draft.currency} options={currencyOptions(selectedAccount)} onChange={(currency) => update({ currency: currency as CurrencyCode })} />
+    <div ref={formRef} className={className}>
+      <SelectField label="类型" value={props.draft.kind} options={kindOptions()} onChange={(value) => changeKind(value as TransactionKind, props.data, props.draft, props.onChange, setFieldErrors)} />
+      <SelectField required fieldName="accountId" error={fieldErrors.accountId} label={accountLabel(props.draft.kind)} value={props.draft.accountId} options={accountOptions} onChange={(accountId) => changeAccount(accountId, props.data, props.draft, props.onChange, setFieldErrors)} />
+      <TextField required fieldName="amount" error={fieldErrors.amount} label="金额" type="number" inputMode="decimal" min={0} step="0.01" value={props.draft.amount} onChange={(amount) => updateField("amount", { amount: Number(amount) })} />
+      <SelectField required fieldName="currency" error={fieldErrors.currency} label="币种" value={props.draft.currency} options={currencyOptions(selectedAccount)} onChange={(currency) => updateField("currency", { currency: currency as CurrencyCode })} />
       {showsCategory(props.draft.kind) && <SelectField label="分类" value={props.draft.categoryId ?? ""} options={categoryOptions(props.data, props.draft.kind)} onChange={(categoryId) => update({ categoryId: categoryId || undefined })} />}
-      {props.draft.kind === "transfer" && <TransferFields data={props.data} draft={props.draft} update={update} />}
+      {props.draft.kind === "transfer" && <TransferFields data={props.data} draft={props.draft} errors={fieldErrors} updateField={updateField} />}
       {props.draft.kind === "credit_payment" && <PaymentSourceField data={props.data} draft={props.draft} update={update} />}
       <DateField label="日期" value={props.draft.occurredAt} onChange={(occurredAt) => update({ occurredAt })} />
       <TagPicker data={props.data} selected={props.draft.tagIds} onChange={(tagIds) => update({ tagIds })} />
@@ -36,7 +57,7 @@ export function TransactionForm(props: {
       </div>
       {!props.embedded && (
         <div className="flex flex-wrap gap-2 md:col-span-2">
-          <Button variant="primary" loading={props.submitting} disabled={props.submitting} onClick={props.onSubmit}>{props.submitLabel}</Button>
+          <Button variant="primary" loading={props.submitting} disabled={props.submitting} onClick={submit}>{props.submitLabel}</Button>
           {props.onCancel && <Button onClick={props.onCancel}>取消</Button>}
         </div>
       )}
@@ -47,14 +68,15 @@ export function TransactionForm(props: {
 function TransferFields(props: {
   readonly data: AppData;
   readonly draft: TransactionDraft;
-  readonly update: (patch: Partial<TransactionDraft>) => void;
+  readonly errors: FieldErrors;
+  readonly updateField: (field: TransactionFieldName, patch: Partial<TransactionDraft>) => void;
 }) {
   const targetAccount = props.data.accounts.find((item) => item.id === props.draft.relatedAccountId);
   return (
     <>
-      <SelectField label="目标账户" value={props.draft.relatedAccountId ?? ""} options={accountOptionsWithEmpty(props.data, "未选择")} onChange={(relatedAccountId) => props.update(transferAccountPatch(props.data, props.draft, relatedAccountId))} />
-      <TextField label="转入金额" type="number" value={props.draft.targetAmount ?? props.draft.amount} onChange={(targetAmount) => props.update({ targetAmount: Number(targetAmount) })} />
-      <SelectField label="转入币种" value={props.draft.targetCurrency ?? props.draft.currency} options={currencyOptions(targetAccount)} onChange={(targetCurrency) => props.update({ targetCurrency: targetCurrency as CurrencyCode })} />
+      <SelectField required fieldName="relatedAccountId" error={props.errors.relatedAccountId} label="目标账户" value={props.draft.relatedAccountId ?? ""} options={accountOptionsWithEmpty(props.data, "未选择")} onChange={(relatedAccountId) => props.updateField("relatedAccountId", transferAccountPatch(props.data, props.draft, relatedAccountId))} />
+      <TextField required fieldName="targetAmount" error={props.errors.targetAmount} label="转入金额" type="number" inputMode="decimal" min={0} step="0.01" value={props.draft.targetAmount ?? props.draft.amount} onChange={(targetAmount) => props.updateField("targetAmount", { targetAmount: Number(targetAmount) })} />
+      <SelectField required fieldName="targetCurrency" error={props.errors.targetCurrency} label="转入币种" value={props.draft.targetCurrency ?? props.draft.currency} options={currencyOptions(targetAccount)} onChange={(targetCurrency) => props.updateField("targetCurrency", { targetCurrency: targetCurrency as CurrencyCode })} />
     </>
   );
 }
@@ -77,6 +99,17 @@ function TagPicker(props: {
       <CheckableTagList label="标签" selected={props.selected} options={entityOptions(props.data.tags)} onChange={props.onChange} />
     </div>
   );
+}
+
+function changeKind(
+  kind: TransactionKind,
+  data: AppData,
+  draft: TransactionDraft,
+  onChange: (draft: TransactionDraft) => void,
+  setFieldErrors: (errors: FieldErrors) => void,
+) {
+  setFieldErrors({});
+  updateKind(kind, data, draft, onChange);
 }
 
 function updateKind(kind: TransactionKind, data: AppData, draft: TransactionDraft, onChange: (draft: TransactionDraft) => void) {
@@ -126,13 +159,43 @@ function accountLabel(kind: TransactionKind): string {
   return kind === "credit_payment" ? "还款目标信用卡" : "账户";
 }
 
-function changeAccount(accountId: string, data: AppData, draft: TransactionDraft, onChange: (draft: TransactionDraft) => void): void {
+function changeAccount(accountId: string, data: AppData, draft: TransactionDraft, onChange: (draft: TransactionDraft) => void, setFieldErrors?: (update: (current: FieldErrors) => FieldErrors) => void): void {
+  setFieldErrors?.((current) => withoutError(current, "accountId"));
   const account = data.accounts.find((item) => item.id === accountId);
   onChange({
     ...draft,
     accountId,
     currency: account ? currencyForAccount(account, draft.currency) as CurrencyCode : draft.currency,
   });
+}
+
+function validateDraftFields(draft: TransactionDraft): FieldErrors {
+  const errors: FieldErrors = {};
+  if (!draft.accountId) errors.accountId = "请选择账户";
+  if (!Number.isFinite(draft.amount) || draft.amount <= 0) errors.amount = "金额必须大于 0";
+  if (!draft.currency) errors.currency = "请选择币种";
+  if (draft.kind === "transfer") {
+    if (!draft.relatedAccountId) errors.relatedAccountId = "请选择目标账户";
+    const targetAmount = draft.targetAmount ?? draft.amount;
+    if (!Number.isFinite(targetAmount) || targetAmount <= 0) errors.targetAmount = "转入金额必须大于 0";
+    if (!draft.targetCurrency && !draft.currency) errors.targetCurrency = "请选择转入币种";
+  }
+  return errors;
+}
+
+function firstErrorField(errors: FieldErrors): TransactionFieldName | undefined {
+  return ERROR_FIELD_ORDER.find((field) => Boolean(errors[field]));
+}
+
+function focusField(formRef: React.RefObject<HTMLDivElement | null>, field: TransactionFieldName): void {
+  window.requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>(`[data-field-name="${field}"]`)?.focus({ preventScroll: false }));
+}
+
+function withoutError(errors: FieldErrors, field: TransactionFieldName): FieldErrors {
+  if (!errors[field]) return errors;
+  const next = { ...errors };
+  delete next[field];
+  return next;
 }
 
 function transferAccountPatch(

@@ -16,6 +16,7 @@ export function CreditStatementsView(props: {
   readonly data: AppData;
   readonly setData: (data: AppData) => void;
   readonly onBack: () => void;
+  readonly onNavigate?: (id: "accounts") => void;
 }) {
   const creditAccounts = props.data.accounts.filter((account) => account.kind === "credit");
   const [status, setStatus] = useState<StatusMessage>();
@@ -46,7 +47,7 @@ export function CreditStatementsView(props: {
       <StatementStatusMessage status={status} />
       <StatementActions creditAccounts={creditAccounts} creatingAccountId={creatingAccountId} onCreate={createStatement} />
       <StatementGrid data={props.data} setData={props.setData} setStatus={setStatus} />
-      {creditAccounts.length === 0 && <EmptyState>暂无信用卡账户。</EmptyState>}
+      {creditAccounts.length === 0 && <EmptyState action={props.onNavigate ? { label: "去账户", onClick: () => props.onNavigate?.("accounts") } : undefined}>暂无信用卡账户。</EmptyState>}
     </section>
   );
 }
@@ -202,7 +203,7 @@ function SettlementDrawer(props: {
     <Drawer open={props.open} title="记录账期结算" width={SETTLEMENT_DRAWER_WIDTH} footer={footer} onClose={props.onClose}>
       <div className="space-y-4">
         <SelectField label="还款来源（可选）" value={sourceAccountId} options={sourceOptions(props.data, props.statement.accountId)} onChange={setSourceAccountId} />
-        <TextField label="主币种结算金额" type="number" value={amount} onChange={setAmount} />
+        <TextField label="主币种结算金额" type="number" inputMode="decimal" min={0} step="0.01" value={amount} onChange={setAmount} />
         <SelectField label="结算币种" value={currency} options={props.data.currencies.map((item) => ({ value: item, label: item }))} onChange={(value) => setCurrency(value as CurrencyCode)} />
       </div>
     </Drawer>

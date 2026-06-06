@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import type { ChangeEvent, CSSProperties, InputHTMLAttributes, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, ChangeEvent, CSSProperties, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
@@ -227,46 +227,61 @@ export function InputNumber(props: Omit<InputHTMLAttributes<HTMLInputElement>, "
   return <TextInput {...props} type="number" onChange={(value) => props.onChange?.(value === "" ? null : Number(value))} />;
 }
 
-export function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, "onChange"> & {
+export function Select(props: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onChange" | "value"> & {
   readonly mode?: "multiple";
+  readonly multiple?: boolean;
+  readonly value?: SelectHTMLAttributes<HTMLSelectElement>["value"];
   readonly options?: readonly { readonly value: string; readonly label: ReactNode }[];
   readonly onChange?: (value: string | readonly string[]) => void;
 }) {
   const { className, mode, multiple, onChange, options = [], value, disabled, ...rest } = props;
-  void rest;
   const [open, setOpen] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const rootRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const multi = Boolean(multiple || mode === "multiple");
   const values = selectValues(value);
   const selected = options.filter((option) => values.includes(option.value));
   const label = selected.length > 0 ? selected.map((option) => option.label).reduce<ReactNode[]>((nodes, node, index) => [...nodes, index > 0 ? "，" : "", node], []) : "请选择";
   const openUp = useOpenUp(triggerRef, open, 280);
+  const openSelect = (focusOption: boolean, index = initialSelectIndex(options, values)) => {
+    setFocusedIndex(index);
+    setOpen(true);
+    if (focusOption) focusSelectOption(rootRef, index);
+  };
+  const closeSelect = (focusTrigger: boolean) => {
+    setOpen(false);
+    setFocusedIndex(-1);
+    if (focusTrigger) window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
+  };
   const choose = (nextValue: string) => {
     if (!multi) {
       onChange?.(nextValue);
-      setOpen(false);
+      closeSelect(true);
       return;
     }
     onChange?.(toggleSelectValue(values, nextValue));
   };
   return (
-    <span className="ui-select-root">
+    <span ref={rootRef} className="ui-select-root">
       <button
+        {...rest}
         ref={triggerRef}
         className={cn("field flex items-center justify-between gap-3 text-left", !selected.length && "text-(--color-text-muted)", className)}
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => open ? closeSelect(false) : openSelect(false)}
+        onKeyDown={(event) => handleSelectTriggerKeyDown(event, { open, options, openSelect, closeSelect })}
       >
         <span className="min-w-0 truncate">{label}</span>
         <span className="shrink-0 text-xs text-(--color-text-muted)">▾</span>
       </button>
       {open && (
-        <LocalFloatingMenu openUp={openUp} close={() => setOpen(false)}>
+        <LocalFloatingMenu openUp={openUp} close={() => closeSelect(false)}>
           <div className="ui-select-menu" role="listbox" aria-multiselectable={multi || undefined}>
-            {options.map((option) => {
+            {options.map((option, index) => {
               const checked = values.includes(option.value);
               return (
                 <button
@@ -275,7 +290,11 @@ export function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, "onC
                   type="button"
                   role="option"
                   aria-selected={checked}
+                  data-select-option-index={index}
+                  tabIndex={focusedIndex === index ? 0 : -1}
                   onClick={() => choose(option.value)}
+                  onFocus={() => setFocusedIndex(index)}
+                  onKeyDown={(event) => handleSelectOptionKeyDown(event, { index, options, choose, closeSelect, rootRef, setFocusedIndex })}
                 >
                   <span className="min-w-0 truncate">{option.label}</span>
                   {checked && <span className="shrink-0 text-(--color-accent)">✓</span>}
@@ -287,6 +306,73 @@ export function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, "onC
       )}
     </span>
   );
+}
+
+function handleSelectTriggerKeyDown(
+  event: ReactKeyboardEvent<HTMLButtonElement>,
+  options: {
+    readonly open: boolean;
+    readonly options: readonly unknown[];
+    readonly openSelect: (focusOption: boolean, index?: number) => void;
+    readonly closeSelect: (focusTrigger: boolean) => void;
+  },
+): void {
+  if (event.key === "Escape" && options.open) {
+    event.preventDefault();
+    options.closeSelect(true);
+    return;
+  }
+  if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const index = event.key === "ArrowUp" ? Math.max(0, options.options.length - 1) : 0;
+    options.openSelect(true, index);
+  }
+}
+
+function handleSelectOptionKeyDown(
+  event: ReactKeyboardEvent<HTMLButtonElement>,
+  options: {
+    readonly index: number;
+    readonly options: readonly { readonly value: string }[];
+    readonly choose: (value: string) => void;
+    readonly closeSelect: (focusTrigger: boolean) => void;
+    readonly rootRef: RefObject<HTMLElement | null>;
+    readonly setFocusedIndex: (index: number) => void;
+  },
+): void {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    options.closeSelect(true);
+    return;
+  }
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    options.choose(options.options[options.index]?.value ?? "");
+    return;
+  }
+  const nextIndex = nextSelectOptionIndex(event.key, options.index, options.options.length);
+  if (nextIndex === options.index) return;
+  event.preventDefault();
+  options.setFocusedIndex(nextIndex);
+  focusSelectOption(options.rootRef, nextIndex);
+}
+
+function nextSelectOptionIndex(key: string, index: number, total: number): number {
+  if (total <= 0) return index;
+  if (key === "ArrowDown") return Math.min(total - 1, index + 1);
+  if (key === "ArrowUp") return Math.max(0, index - 1);
+  if (key === "Home") return 0;
+  if (key === "End") return total - 1;
+  return index;
+}
+
+function initialSelectIndex(options: readonly { readonly value: string }[], values: readonly string[]): number {
+  const selectedIndex = options.findIndex((option) => values.includes(option.value));
+  return Math.max(0, selectedIndex);
+}
+
+function focusSelectOption(rootRef: RefObject<HTMLElement | null>, index: number): void {
+  window.requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(`[data-select-option-index="${index}"]`)?.focus({ preventScroll: true }));
 }
 
 function selectValues(value: SelectHTMLAttributes<HTMLSelectElement>["value"]): readonly string[] {

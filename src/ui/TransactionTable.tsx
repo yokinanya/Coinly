@@ -3,6 +3,7 @@ import type { AppData, Transaction } from "../domain/types";
 import { dateOnly, money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
 import { Button, Checkbox, Select } from "./components";
+import { EmptyState } from "./common";
 import { visibleSelectedIds } from "./transactionSelection";
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -34,10 +35,11 @@ export function TransactionTable(props: TransactionTableProps) {
   const rows = useMemo(() => filteredRows(sortByOccurredAt(props.transactions), filters), [filters, props.transactions]);
   const pageRows = useMemo(() => currentPageRows(rows, page, pageSize), [page, pageSize, rows]);
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const activeFilters = hasActiveFilters(filters);
   return (
     <div className="panel overflow-hidden">
       <TableFilters data={props.data} filters={filters} setFilters={(value) => updateFilters(value, setFilters, setPage, props, rows)} />
-      <RowsTable {...props} rows={pageRows} />
+      <RowsTable {...props} rows={pageRows} emptyAction={activeFilters ? { label: "清空筛选", onClick: () => clearFilters(setFilters, setPage, props.setSelectedIds) } : undefined} />
       <TablePager page={page} pages={pages} pageSize={pageSize} total={rows.length} setPage={setPage} setPageSize={setPageSize} />
     </div>
   );
@@ -60,9 +62,9 @@ function TableFilters(props: {
   );
 }
 
-function RowsTable(props: TransactionTableProps & { readonly rows: readonly Transaction[] }) {
+function RowsTable(props: TransactionTableProps & { readonly rows: readonly Transaction[]; readonly emptyAction?: { readonly label: string; readonly onClick: () => void } }) {
   if (props.rows.length === 0) {
-    return <p className="p-6 text-center text-sm text-(--color-text-secondary)">暂无交易</p>;
+    return <div className="p-3"><EmptyState action={props.emptyAction}>{props.emptyAction ? "没有符合条件的交易。" : "暂无交易。"}</EmptyState></div>;
   }
   return (
     <>
@@ -185,6 +187,16 @@ function updateFilters(
   setFilters(filters);
   setPage(1);
   props.setSelectedIds(visibleSelectedIds(props.selectedIds, currentRows));
+}
+
+function clearFilters(setFilters: (filters: Filters) => void, setPage: (page: number) => void, setSelectedIds: (ids: readonly string[]) => void): void {
+  setFilters(EMPTY_FILTERS);
+  setPage(1);
+  setSelectedIds([]);
+}
+
+function hasActiveFilters(filters: Filters): boolean {
+  return Boolean(filters.currency || filters.accountId || filters.categoryId || filters.kind);
 }
 
 function sortByOccurredAt(transactions: readonly Transaction[]): readonly Transaction[] {

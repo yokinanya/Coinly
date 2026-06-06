@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ReactNode } from "react";
+import type { InputHTMLAttributes, ReactNode } from "react";
 import type { AppData } from "../../domain/types";
 import { ConfirmDialog, SelectField as CommonSelectField, TextField } from "../common";
 import type { FormOption } from "../common";
@@ -71,9 +71,13 @@ export function ManagerDrawer(props: {
 export function Field(props: {
   readonly label: string;
   readonly value: string | number;
+  readonly type?: InputHTMLAttributes<HTMLInputElement>["type"];
+  readonly inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"];
+  readonly min?: InputHTMLAttributes<HTMLInputElement>["min"];
+  readonly step?: InputHTMLAttributes<HTMLInputElement>["step"];
   readonly onChange: (value: string) => void;
 }) {
-  return <div className="py-0.5"><TextField label={props.label} value={props.value} onChange={props.onChange} /></div>;
+  return <div className="py-0.5"><TextField label={props.label} type={props.type} inputMode={props.inputMode} min={props.min} step={props.step} value={props.value} onChange={props.onChange} /></div>;
 }
 
 export function SelectField(props: {

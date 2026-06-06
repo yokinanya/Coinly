@@ -1,8 +1,8 @@
-import type { KeyboardEvent, ReactNode } from "react";
-import { useMemo, useRef, useState } from "react";
+import type { InputHTMLAttributes, KeyboardEvent, ReactNode, TextareaHTMLAttributes } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import { Alert, FloatingMenu, Input, Modal, Select, Tag } from "./components";
+import { Alert, Button, FloatingMenu, Input, Modal, Select, Tag } from "./components";
 import { FadeIn } from "./motion";
 
 export type StatusTone = "info" | "success" | "warning" | "error";
@@ -15,6 +15,14 @@ export interface StatusMessage {
 export interface FormOption {
   readonly value: string;
   readonly label: string;
+}
+
+interface FieldFeedbackProps {
+  readonly label: string;
+  readonly description?: ReactNode;
+  readonly error?: string;
+  readonly required?: boolean;
+  readonly fieldName?: string;
 }
 
 const WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"] as const;
@@ -36,8 +44,16 @@ export function SectionPanel(props: { readonly title?: string; readonly children
   );
 }
 
-export function EmptyState({ children }: { readonly children: ReactNode }) {
-  return <p className="row-card p-4 text-sm text-(--color-text-secondary)">{children}</p>;
+export function EmptyState(props: {
+  readonly children: ReactNode;
+  readonly action?: { readonly label: string; readonly onClick: () => void };
+}) {
+  return (
+    <div className="row-card space-y-3 p-4 text-sm text-(--color-text-secondary)">
+      <div>{props.children}</div>
+      {props.action && <Button onClick={props.action.onClick}>{props.action.label}</Button>}
+    </div>
+  );
 }
 
 export function ErrorBanner({ message }: { readonly message: string }) {
@@ -73,52 +89,78 @@ export function ConfirmDialog(props: {
   );
 }
 
-export function TextField(props: {
-  readonly label: string;
+export function TextField(props: Omit<InputHTMLAttributes<HTMLInputElement>, "onChange" | "value"> & FieldFeedbackProps & {
   readonly value: string | number;
-  readonly type?: string;
-  readonly placeholder?: string;
   readonly compact?: boolean;
   readonly onChange: (value: string) => void;
 }) {
+  const { className, compact, description, error, fieldName, label, onChange, required, style, type, value, ...rest } = props;
+  const feedback = useFieldFeedback({ description, error });
   return (
     <label className="block w-full">
-      <span className="label">{props.label}</span>
-      <Input className="mt-2 w-full" style={{ width: "100%", height: props.compact ? 36 : undefined }} type={props.type ?? "text"} value={props.value} placeholder={props.placeholder} onChange={(value) => props.onChange(String(value))} />
+      <FieldLabel label={label} required={required} />
+      <Input
+        {...rest}
+        className={`mt-2 w-full ${className ?? ""}`}
+        style={{ ...style, width: "100%", height: compact ? 36 : style?.height }}
+        type={type ?? "text"}
+        value={value}
+        aria-describedby={feedback.describedBy}
+        aria-invalid={Boolean(error) || undefined}
+        aria-required={required || undefined}
+        data-field-name={fieldName}
+        onChange={(value) => onChange(String(value))}
+      />
+      <FieldFeedback description={description} descriptionId={feedback.descriptionId} error={error} errorId={feedback.errorId} />
     </label>
   );
 }
 
-export function SelectField(props: {
-  readonly label: string;
+export function SelectField(props: FieldFeedbackProps & {
   readonly value: string;
   readonly options: readonly FormOption[];
   readonly onChange: (value: string) => void;
 }) {
+  const feedback = useFieldFeedback({ description: props.description, error: props.error });
   return (
     <label className="block w-full">
-      <span className="label">{props.label}</span>
-      <Select className="mt-2 w-full" value={props.value} options={[...props.options]} onChange={(value) => props.onChange(String(value))} />
+      <FieldLabel label={props.label} required={props.required} />
+      <Select
+        className="mt-2 w-full"
+        value={props.value}
+        options={[...props.options]}
+        aria-describedby={feedback.describedBy}
+        aria-invalid={Boolean(props.error) || undefined}
+        aria-required={props.required || undefined}
+        data-field-name={props.fieldName}
+        onChange={(value) => props.onChange(String(value))}
+      />
+      <FieldFeedback description={props.description} descriptionId={feedback.descriptionId} error={props.error} errorId={feedback.errorId} />
     </label>
   );
 }
 
-export function MultiSelectField(props: {
-  readonly label: string;
+export function MultiSelectField(props: FieldFeedbackProps & {
   readonly values: readonly string[];
   readonly options: readonly FormOption[];
   readonly onChange: (values: readonly string[]) => void;
 }) {
+  const feedback = useFieldFeedback({ description: props.description, error: props.error });
   return (
     <label className="block w-full">
-      <span className="label">{props.label}</span>
+      <FieldLabel label={props.label} required={props.required} />
       <Select
         className="mt-2 w-full"
         mode="multiple"
         value={[...props.values]}
         options={[...props.options]}
+        aria-describedby={feedback.describedBy}
+        aria-invalid={Boolean(props.error) || undefined}
+        aria-required={props.required || undefined}
+        data-field-name={props.fieldName}
         onChange={(values) => props.onChange(Array.isArray(values) ? values.map(String) : [])}
       />
+      <FieldFeedback description={props.description} descriptionId={feedback.descriptionId} error={props.error} errorId={feedback.errorId} />
     </label>
   );
 }
@@ -304,19 +346,62 @@ export function CheckableTagList(props: {
   );
 }
 
-export function TextAreaField(props: {
-  readonly label: string;
+export function TextAreaField(props: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange" | "value"> & FieldFeedbackProps & {
   readonly value: string;
   readonly minRows?: number;
   readonly maxRows?: number;
   readonly onChange: (value: string) => void;
 }) {
+  const { className, description, error, fieldName, label, maxRows, minRows, onChange, required, value, ...rest } = props;
+  const feedback = useFieldFeedback({ description, error });
   return (
-    <label>
-      <span className="label">{props.label}</span>
-      <Input.TextArea className="mt-2" autoSize={{ minRows: props.minRows ?? 1, maxRows: props.maxRows ?? 6 }} value={props.value} onChange={(value) => props.onChange(String(value))} />
+    <label className="block w-full">
+      <FieldLabel label={label} required={required} />
+      <Input.TextArea
+        {...rest}
+        className={`mt-2 ${className ?? ""}`}
+        autoSize={{ minRows: minRows ?? 1, maxRows: maxRows ?? 6 }}
+        value={value}
+        aria-describedby={feedback.describedBy}
+        aria-invalid={Boolean(error) || undefined}
+        aria-required={required || undefined}
+        data-field-name={fieldName}
+        onChange={(value) => onChange(String(value))}
+      />
+      <FieldFeedback description={description} descriptionId={feedback.descriptionId} error={error} errorId={feedback.errorId} />
     </label>
   );
+}
+
+function FieldLabel(props: { readonly label: string; readonly required?: boolean }) {
+  return (
+    <span className="label">
+      {props.label}
+      {props.required && <span className="ml-1 text-(--color-error)" aria-hidden="true">*</span>}
+    </span>
+  );
+}
+
+function FieldFeedback(props: {
+  readonly description?: ReactNode;
+  readonly descriptionId?: string;
+  readonly error?: string;
+  readonly errorId?: string;
+}) {
+  if (!props.description && !props.error) return null;
+  return (
+    <div className="mt-1 space-y-1">
+      {props.description && <p id={props.descriptionId} className="text-xs text-(--color-text-secondary)">{props.description}</p>}
+      {props.error && <p id={props.errorId} className="text-xs font-medium text-(--color-error)">{props.error}</p>}
+    </div>
+  );
+}
+
+function useFieldFeedback(props: { readonly description?: ReactNode; readonly error?: string }) {
+  const id = useId();
+  const descriptionId = props.description ? `${id}-description` : undefined;
+  const errorId = props.error ? `${id}-error` : undefined;
+  return { descriptionId, errorId, describedBy: [descriptionId, errorId].filter(Boolean).join(" ") || undefined };
 }
 
 function formatDateValue(value: string, showTime: boolean): string {

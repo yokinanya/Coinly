@@ -1,4 +1,4 @@
-import { bumpVersion, createId, nowIso } from "./factory";
+import { bumpVersion, nowIso } from "./factory";
 import type { Account, AppData, RecurringRule, Transaction } from "./types";
 
 export const LOOKBACK_MONTHS = 1;
@@ -8,7 +8,10 @@ export function materializeDueRecurring(data: AppData, now = new Date()): AppDat
   if (dueRules.length === 0) {
     return data;
   }
-  const created = dueRules.map((rule) => transactionFromRule(rule));
+  const existingOccurrences = new Set(data.transactions.map(recurringOccurrenceKey).filter(isPresent));
+  const created = dueRules
+    .filter((rule) => !existingOccurrences.has(recurringOccurrenceKeyForRule(rule)))
+    .map((rule) => transactionFromRule(rule));
   const recurringRules = data.recurringRules.map((rule) => advanceRuleIfDue(rule, now));
   return bumpVersion({
     ...data,
@@ -60,7 +63,7 @@ export function validateRecurringRule(data: AppData, rule: RecurringRule, now = 
 function transactionFromRule(rule: RecurringRule): Transaction {
   const timestamp = nowIso();
   return {
-    id: createId(),
+    id: recurringTransactionId(rule),
     createdAt: timestamp,
     updatedAt: timestamp,
     ...rule.transaction,
@@ -68,6 +71,20 @@ function transactionFromRule(rule: RecurringRule): Transaction {
     note: recurringTransactionNote(rule),
     sourceRecurringRuleId: rule.id,
   };
+}
+
+function recurringTransactionId(rule: RecurringRule): string {
+  return `recurring:${rule.id}:${rule.nextRunAt}`;
+}
+
+function recurringOccurrenceKey(transaction: Transaction): string | undefined {
+  return transaction.sourceRecurringRuleId
+    ? `${transaction.sourceRecurringRuleId}\u0000${transaction.occurredAt}`
+    : undefined;
+}
+
+function recurringOccurrenceKeyForRule(rule: RecurringRule): string {
+  return `${rule.id}\u0000${rule.nextRunAt}`;
 }
 
 function recurringTransactionNote(rule: RecurringRule): string {
@@ -103,4 +120,8 @@ function nextRun(value: string, interval: RecurringRule["interval"]): string {
 
 function startOfDay(value: Date): Date {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function isPresent<T>(value: T | undefined): value is T {
+  return value !== undefined;
 }

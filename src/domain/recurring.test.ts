@@ -8,7 +8,7 @@ import {
   materializeDueRecurring,
   validateRecurringRule,
 } from "./recurring";
-import type { Account, AppData, RecurringRule } from "./types";
+import type { Account, AppData, RecurringRule, Transaction } from "./types";
 
 describe("recurring rules", () => {
   it("limits recurring currencies to the selected non-credit account currency", () => {
@@ -121,6 +121,34 @@ describe("recurring rules", () => {
 
     expect(next.transactions[0]?.categoryId).toBe(base.categories[0].id);
   });
+
+  it("uses a stable id for the same recurring occurrence", () => {
+    const base = initialData();
+    const data: AppData = {
+      ...base,
+      recurringRules: [recurringRule(base, { id: "stable-rule", nextRunAt: "2026-05-01T00:00:00.000Z" })],
+    };
+
+    const first = materializeDueRecurring(data, new Date("2026-05-18T00:00:00.000Z"));
+    const second = materializeDueRecurring(data, new Date("2026-05-18T00:00:00.000Z"));
+
+    expect(first.transactions[0]?.id).toBe(second.transactions[0]?.id);
+  });
+
+  it("does not create another transaction for an existing recurring occurrence", () => {
+    const base = initialData();
+    const rule = recurringRule(base, { id: "existing-rule", nextRunAt: "2026-05-01T00:00:00.000Z" });
+    const data: AppData = {
+      ...base,
+      recurringRules: [rule],
+      transactions: [recurringTransaction(base, rule, "legacy-transaction")],
+    };
+
+    const next = materializeDueRecurring(data, new Date("2026-05-18T00:00:00.000Z"));
+
+    expect(next.transactions.map((transaction) => transaction.id)).toEqual(["legacy-transaction"]);
+    expect(next.recurringRules[0]?.nextRunAt).toBe("2026-06-01T00:00:00.000Z");
+  });
 });
 
 function accountFixture(patch: Partial<Account>): Account {
@@ -148,5 +176,21 @@ function recurringRule(data: AppData, patch: Partial<RecurringRule> = {}): Recur
       note: "",
       ...patch.transaction,
     },
+  };
+}
+
+function recurringTransaction(data: AppData, rule: RecurringRule, id: string): Transaction {
+  return {
+    id,
+    createdAt: rule.nextRunAt,
+    updatedAt: rule.nextRunAt,
+    kind: "expense",
+    accountId: data.accounts[0].id,
+    amount: 10,
+    currency: data.accounts[0].currency,
+    occurredAt: rule.nextRunAt,
+    tagIds: [],
+    note: rule.name,
+    sourceRecurringRuleId: rule.id,
   };
 }

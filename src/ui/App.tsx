@@ -274,7 +274,7 @@ function renderView(options: {
   const props = { data: options.data, setData: options.setVaultData };
   if (options.viewId === "entry") return <EntryView data={options.data} setData={options.setVaultData} setStatus={options.setStatus} />;
   if (options.viewId === "transactions") return <TransactionsView {...props} setViewId={options.setViewId} />;
-  if (options.viewId === "statements") return <CreditStatementsView {...props} onBack={() => navigateToView("transactions", options.setViewId)} />;
+  if (options.viewId === "statements") return <CreditStatementsView {...props} onBack={() => navigateToView("transactions", options.setViewId)} onNavigate={(id) => navigateToView(id, options.setViewId)} />;
   if (options.viewId === "accounts") return <AccountsView {...props} />;
   if (options.viewId === "budget") return <BudgetView {...props} />;
   if (options.viewId === "stats") return <StatsView data={options.data} onFilter={(filter) => navigateToTransactions(filter, options.setViewId)} />;
@@ -282,7 +282,7 @@ function renderView(options: {
   if (options.viewId === "categories") return <CategoriesView {...props} />;
   if (options.viewId === "recurring") return <RecurringView {...props} />;
   if (options.viewId === "settings") return <SettingsView data={options.data} token={options.token} setData={options.setData} setVaultData={options.setVaultData} />;
-  return <DashboardView {...props} />;
+  return <DashboardView {...props} onNavigate={(id) => navigateToView(id, options.setViewId)} />;
 }
 
 function navigateToTransactions(
