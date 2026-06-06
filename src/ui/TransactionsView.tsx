@@ -19,8 +19,8 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
   const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
   const [message, setMessage] = useState("");
-  const accounts = Object.fromEntries(props.data.accounts.map((item) => [item.id, item.name]));
-  const categories = Object.fromEntries(props.data.categories.map((item) => [item.id, item.name]));
+  const accounts = useMemo(() => Object.fromEntries(props.data.accounts.map((item) => [item.id, item.name])), [props.data.accounts]);
+  const categories = useMemo(() => Object.fromEntries(props.data.categories.map((item) => [item.id, item.name])), [props.data.categories]);
   const locationSearch = window.location.search;
   const statsFilter = useMemo(() => filterFromUrl(locationSearch), [locationSearch]);
   const filteredTransactions = useMemo(() => {

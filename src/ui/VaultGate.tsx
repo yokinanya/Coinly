@@ -38,10 +38,10 @@ export function VaultGate(props: {
     }).finally(() => setSubmitting(false));
   };
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--color-background)] px-4 py-8 text-[var(--color-text)]">
-      <section className="w-full max-w-md space-y-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+    <main className="grid min-h-screen place-items-center bg-(--color-background) px-4 py-8 text-(--color-text)">
+      <section className="w-full max-w-md space-y-5 rounded-lg border border-(--color-border) bg-(--color-surface) p-5 shadow-sm">
         <GateHeader mode={mode} />
-        {props.status.text && <p className={`text-sm ${props.status.tone === "error" ? "text-red-600" : "text-[var(--color-text-secondary)]"}`}>{props.status.text}</p>}
+        {props.status.text && <p className={`text-sm ${props.status.tone === "error" ? "text-red-600" : "text-(--color-text-secondary)"}`}>{props.status.text}</p>}
         <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <PasswordField value={passphrase} onChange={setPassphrase} />
           {mode === "create" && (
@@ -75,12 +75,12 @@ export function VaultGate(props: {
 function GateHeader({ mode }: { readonly mode: VaultMode }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="grid h-10 w-10 place-items-center rounded-md bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+      <span className="grid h-10 w-10 place-items-center rounded-md bg-(--color-accent-soft) text-(--color-accent)">
         {mode === "unlock" ? <Lock size={20} /> : <ShieldCheck size={20} />}
       </span>
       <div>
         <h1 className="text-lg font-semibold">{modeTitle(mode)}</h1>
-        <p className="text-sm text-[var(--color-text-secondary)]">{modeDescription(mode)}</p>
+        <p className="text-sm text-(--color-text-secondary)">{modeDescription(mode)}</p>
       </div>
     </div>
   );
@@ -137,7 +137,7 @@ function SyncSettingsQrScanner(props: {
       <div className="space-y-3">
         {hasQrScannerSupport()
           ? <video ref={videoRef} className="aspect-square w-full rounded-lg bg-black object-cover" muted playsInline />
-          : <p className="text-sm text-[var(--color-text-secondary)]">当前浏览器不支持摄像头二维码识别，请使用“导入二维码图片”。</p>}
+          : <p className="text-sm text-(--color-text-secondary)">当前浏览器不支持摄像头二维码识别，请使用“导入二维码图片”。</p>}
       </div>
     </Modal>
   );
@@ -161,7 +161,7 @@ function SelectedSyncSettingsFile(props: {
 }) {
   const label = props.file.loading ? "正在读取同步配置" : props.file.name;
   return (
-    <span className="flex min-h-9 items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+    <span className="flex min-h-9 items-center gap-2 text-sm text-(--color-text-secondary)">
       <span className="max-w-56 truncate">{label}</span>
       <Button aria-label="移除同步配置" title="移除同步配置" onClick={props.clear}><X size={14} /></Button>
     </span>

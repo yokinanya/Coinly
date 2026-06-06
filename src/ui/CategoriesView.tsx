@@ -9,7 +9,7 @@ export function CategoriesView(props: { readonly data: AppData; readonly setData
   return (
     <section className="space-y-5">
       <PageHeader title="分类标签" />
-      <div className="hidden min-h-[32rem] grid-cols-[minmax(20rem,1.35fr)_minmax(20rem,1fr)] gap-4 lg:grid">
+      <div className="hidden min-h-128 grid-cols-[minmax(20rem,1.35fr)_minmax(20rem,1fr)] gap-4 lg:grid">
         <CategoryManager data={props.data} setData={props.setData} setMessage={setMessage} />
         <TagManager data={props.data} setData={props.setData} setMessage={setMessage} />
       </div>

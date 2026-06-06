@@ -59,9 +59,9 @@ function AccountCard(props: {
   return (
     <article className="panel flex min-h-36 flex-col justify-between gap-4 p-4">
       <div className="min-w-0">
-        <h2 className="truncate font-semibold text-[var(--color-text)]">{props.account.name}</h2>
-        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{ACCOUNT_KIND_LABELS[props.account.kind]}</p>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{accountCurrencyText(props.account)}</p>
+        <h2 className="truncate font-semibold text-(--color-text)">{props.account.name}</h2>
+        <p className="mt-2 text-sm text-(--color-text-secondary)">{ACCOUNT_KIND_LABELS[props.account.kind]}</p>
+        <p className="mt-1 text-sm text-(--color-text-secondary)">{accountCurrencyText(props.account)}</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => props.onEdit(props.account)}>编辑</Button>

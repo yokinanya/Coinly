@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 export function MarkdownContent(props: { readonly content: string }) {
-  return <div className="row-card motion-selection space-y-3 p-3 text-sm leading-6">{parseMarkdown(props.content)}</div>;
+  const nodes = useMemo(() => parseMarkdown(props.content), [props.content]);
+  return <div className="row-card motion-selection space-y-3 p-3 text-sm leading-6">{nodes}</div>;
 }
 
 function parseMarkdown(content: string): readonly ReactNode[] {
@@ -36,17 +37,17 @@ function flushList(nodes: ReactNode[], items: readonly string[]): void {
 }
 
 function blockNode(line: string, index: number): ReactNode {
-  if (line.startsWith("### ")) return <h3 key={index} className="font-semibold text-[var(--color-text)]">{inlineMarkdown(line.slice(4))}</h3>;
-  if (line.startsWith("## ")) return <h2 key={index} className="font-semibold text-[var(--color-text)]">{inlineMarkdown(line.slice(3))}</h2>;
-  if (line.startsWith("# ")) return <h2 key={index} className="font-semibold text-[var(--color-text)]">{inlineMarkdown(line.slice(2))}</h2>;
-  return <p key={index} className="text-[var(--color-text-secondary)]">{inlineMarkdown(line)}</p>;
+  if (line.startsWith("### ")) return <h3 key={index} className="font-semibold text-(--color-text)">{inlineMarkdown(line.slice(4))}</h3>;
+  if (line.startsWith("## ")) return <h2 key={index} className="font-semibold text-(--color-text)">{inlineMarkdown(line.slice(3))}</h2>;
+  if (line.startsWith("# ")) return <h2 key={index} className="font-semibold text-(--color-text)">{inlineMarkdown(line.slice(2))}</h2>;
+  return <p key={index} className="text-(--color-text-secondary)">{inlineMarkdown(line)}</p>;
 }
 
 function inlineMarkdown(text: string): readonly ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, index) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index} className="font-semibold text-[var(--color-text)]">{part.slice(2, -2)}</strong>;
+      return <strong key={index} className="font-semibold text-(--color-text)">{part.slice(2, -2)}</strong>;
     }
     return part;
   });

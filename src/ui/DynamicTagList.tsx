@@ -29,7 +29,7 @@ export function DynamicTagList(props: {
         ? (
           <input
             autoFocus
-            className="min-h-8 w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+            className="min-h-8 w-24 rounded-md border border-(--color-border) bg-(--color-surface) px-2 text-sm text-(--color-text) outline-none focus:border-(--color-primary)"
             placeholder={props.placeholder}
             value={value}
             onBlur={save}

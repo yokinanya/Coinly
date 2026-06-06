@@ -108,16 +108,16 @@ function resolutionDescription(resolution: SyncResolution, localUpdatedAt: strin
 
 function DiffSummary({ summary }: { readonly summary: SyncDiffSummary }) {
   if (!hasDiff(summary)) {
-    return <p className="text-sm text-[var(--color-text-secondary)]">本地与远端实体内容一致。</p>;
+    return <p className="text-sm text-(--color-text-secondary)">本地与远端实体内容一致。</p>;
   }
   const collections = summary.collections.filter((item) => collectionDiffTotal(item) > 0);
   return (
-    <div className="space-y-2 rounded border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-sm">
-      <p className="font-medium text-[var(--color-text)]">数据差异摘要</p>
+    <div className="space-y-2 rounded border border-(--color-border) bg-(--color-background) p-3 text-sm">
+      <p className="font-medium text-(--color-text)">数据差异摘要</p>
       <div className="grid gap-2 sm:grid-cols-2">
         {collections.map((item) => <CollectionDiff key={item.key} summary={item} />)}
         {(summary.currencyLocalOnly > 0 || summary.currencyRemoteOnly > 0) && (
-          <p className="text-[var(--color-text-secondary)]">
+          <p className="text-(--color-text-secondary)">
             币种：本地独有 {summary.currencyLocalOnly}，远端独有 {summary.currencyRemoteOnly}
           </p>
         )}
@@ -128,7 +128,7 @@ function DiffSummary({ summary }: { readonly summary: SyncDiffSummary }) {
 
 function CollectionDiff({ summary }: { readonly summary: CollectionDiffSummary }) {
   return (
-    <p className="text-[var(--color-text-secondary)]">
+    <p className="text-(--color-text-secondary)">
       {summary.label}：
       本地独有 {summary.localOnly}，
       远端独有 {summary.remoteOnly}，

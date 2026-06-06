@@ -18,7 +18,7 @@ export interface ManagerProps {
 }
 
 export function ManagerPanel(props: { readonly title: string; readonly children: ReactNode }) {
-  return <FadeIn><section className="panel space-y-4 p-4"><h2 className="font-semibold text-[var(--color-text)]">{props.title}</h2>{props.children}</section></FadeIn>;
+  return <FadeIn><section className="panel space-y-4 p-4"><h2 className="font-semibold text-(--color-text)">{props.title}</h2>{props.children}</section></FadeIn>;
 }
 
 export function EntityList<T extends { readonly id: string; readonly name: string }>(props: {

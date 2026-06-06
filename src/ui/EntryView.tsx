@@ -7,7 +7,7 @@ import { validateTransactionDraft } from "../ai/validation";
 import { createTransaction } from "../domain/factory";
 import { upsertTransaction, validateTransactionDraft as validateDraft } from "../domain/operations";
 import type { AppData, TransactionDraft } from "../domain/types";
-import { ErrorBanner, MessageBanner, PageHeader, SectionPanel, SuccessBanner } from "./common";
+import { MessageBanner, PageHeader, SectionPanel } from "./common";
 import type { StatusMessage } from "./common";
 import { money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
@@ -28,7 +28,7 @@ export function EntryView(props: EntryViewProps) {
   const [candidateEditing, setCandidateEditing] = useState(false);
   const [candidateMessage, setCandidateMessage] = useState<AiState>({ tone: "idle", text: "" });
   const [aiText, setAiText] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<StatusMessage>();
   const [saving, setSaving] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const saveDraft = () => saveTransactionDraft({ props, draft, saving, setDraft, setMessage, setSaving });
@@ -67,8 +67,7 @@ export function EntryView(props: EntryViewProps) {
             onCancel={() => discardCandidate({ setCandidate, setCandidateEditing, setCandidateMessage })}
           />
         )}
-        <ErrorBanner message={message.includes("失败") || message.includes("请先") ? message : ""} />
-        <SuccessBanner message={message && !message.includes("失败") && !message.includes("请先") ? message : ""} />
+        {message?.text && <MessageBanner message={message.text} tone={message.tone} />}
         <ManualEntryPanel open={manualOpen} setOpen={setManualOpen}>
           <TransactionForm data={props.data} draft={draft} onChange={setDraft} onSubmit={saveDraft} submitLabel="保存交易" submitting={saving} />
         </ManualEntryPanel>
@@ -85,6 +84,7 @@ function AiPanel(props: {
 }) {
   const [state, setState] = useState<AiState>({ tone: "idle", text: "" });
   const pending = state.tone === "loading";
+  const canParseText = props.text.trim().length > 0;
   const supportsVision = props.data.aiSettings ? resolveAiModelCapabilities(props.data.aiSettings).supportsVision : false;
   const parseText = () => runAi(() => createAiProvider(props.data.aiSettings).parseText(props.text, props.data), props, setState);
   const parseImage = (file: File) => {
@@ -95,11 +95,11 @@ function AiPanel(props: {
     <div className="panel space-y-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-semibold text-[var(--color-text)]">AI 记账</h2>
-          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">输入一句话或上传截图，确认后再写入账本。</p>
+          <h2 className="font-semibold text-(--color-text)">AI 记账</h2>
+          <p className="mt-1 text-xs text-(--color-text-secondary)">输入一句话或上传截图，确认后再写入账本。</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button loading={pending} disabled={pending} onClick={parseText}><Sparkles size={16} />解析文本</Button>
+          <Button loading={pending} disabled={pending || !canParseText} onClick={parseText}><Sparkles size={16} />解析文本</Button>
           <Upload accept="image/*" beforeUpload={parseImage} disabled={!supportsVision} maxCount={1} showUploadList={false}>
             <Button loading={pending} disabled={pending || !supportsVision} icon={<Camera size={16} />}>解析图片</Button>
           </Upload>
@@ -107,7 +107,7 @@ function AiPanel(props: {
       </div>
       <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} value={props.text} onChange={(value) => props.setText(String(value))} placeholder="例如：星巴克 38 元，餐饮，今天下午" />
       <AiMessage state={state} />
-      {!supportsVision && <p className="text-xs text-[var(--color-text-secondary)]">当前 AI 模型不支持图片解析，请在设置中更换多模态模型或手动开启图片能力。</p>}
+      {!supportsVision && <p className="text-xs text-(--color-text-secondary)">当前 AI 模型不支持图片解析，请在设置中更换多模态模型或手动开启图片能力。</p>}
     </div>
   );
 }
@@ -138,7 +138,7 @@ function CandidatePanel(props: {
       <CandidateSummary data={props.data} value={props.value} />
       <AiMessage state={props.message} />
       {props.editing && (
-        <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+        <div className="mt-4 border-t border-(--color-border) pt-4">
           <TransactionForm embedded data={props.data} draft={props.value} onChange={props.onChange} onSubmit={props.onSave} submitLabel="保存识别结果" />
         </div>
       )}
@@ -174,8 +174,8 @@ function CandidateSummary(props: { readonly data: AppData; readonly value: Trans
 function CandidateItem(props: { readonly label: string; readonly value: string }) {
   return (
     <div className="row-card min-w-0 p-3">
-      <div className="text-xs text-[var(--color-text-secondary)]">{props.label}</div>
-      <div className="mt-1 truncate font-medium text-[var(--color-text)]">{props.value}</div>
+      <div className="text-xs text-(--color-text-secondary)">{props.label}</div>
+          <div className="mt-1 truncate font-medium text-(--color-text)" title={props.value}>{props.value}</div>
     </div>
   );
 }
@@ -187,14 +187,14 @@ function ManualEntryPanel(props: {
 }) {
   return (
     <section className="panel overflow-hidden">
-      <button className="flex w-full items-center justify-between gap-3 p-4 text-left" type="button" onClick={() => props.setOpen(!props.open)}>
+      <button className="flex w-full items-center justify-between gap-3 p-4 text-left" type="button" aria-expanded={props.open} onClick={() => props.setOpen(!props.open)}>
         <span>
-          <span className="block font-semibold text-[var(--color-text)]">手工记账</span>
-          <span className="mt-1 block text-xs text-[var(--color-text-secondary)]">AI 不适合时再展开填写完整表单。</span>
+          <span className="block font-semibold text-(--color-text)">手工记账</span>
+          <span className="mt-1 block text-xs text-(--color-text-secondary)">AI 不适合时再展开填写完整表单。</span>
         </span>
         <ChevronDown className={props.open ? "rotate-180 transition" : "transition"} size={18} />
       </button>
-      {props.open && <div className="border-t border-[var(--color-border)] p-4">{props.children}</div>}
+      {props.open && <div className="border-t border-(--color-border) p-4">{props.children}</div>}
     </section>
   );
 }
@@ -204,22 +204,23 @@ function saveTransactionDraft(options: {
   readonly draft: TransactionDraft;
   readonly saving: boolean;
   readonly setDraft: (draft: TransactionDraft) => void;
-  readonly setMessage: (value: string) => void;
+  readonly setMessage: (value: StatusMessage) => void;
   readonly setSaving: (value: boolean) => void;
 }) {
   if (options.saving) return;
   options.setSaving(true);
   const result = validateDraft(options.props.data, options.draft);
   if (!result.valid) {
-    options.setMessage(result.errors.join("；"));
-    Message.error(result.errors.join("；"));
+    const text = result.errors.join("；");
+    options.setMessage({ tone: "error", text });
+    Message.error(text);
     options.setSaving(false);
     return;
   }
   const updated = withRecentEntry(upsertTransaction(options.props.data, createTransaction(options.draft)), options.draft);
   options.props.setData(updated);
   options.setDraft(initialDraft(updated));
-  options.setMessage("交易已保存");
+  options.setMessage({ tone: "success", text: "交易已保存" });
   Message.success("交易已保存");
   window.setTimeout(() => options.setSaving(false), 200);
 }
@@ -233,7 +234,7 @@ function saveCandidateDraft(options: {
   readonly setCandidateEditing: (value: boolean) => void;
   readonly setCandidateMessage: (state: AiState) => void;
   readonly setDraft: (draft: TransactionDraft) => void;
-  readonly setMessage: (value: string) => void;
+  readonly setMessage: (value: StatusMessage) => void;
   readonly setSaving: (value: boolean) => void;
 }) {
   if (options.saving || !options.candidate) return;
@@ -251,7 +252,7 @@ function saveCandidateDraft(options: {
   options.setCandidate(undefined);
   options.setCandidateEditing(false);
   options.setCandidateMessage({ tone: "success", text: "识别结果已保存" });
-  options.setMessage("识别结果已保存");
+  options.setMessage({ tone: "success", text: "识别结果已保存" });
   Message.success("识别结果已保存");
   window.setTimeout(() => options.setSaving(false), 200);
 }

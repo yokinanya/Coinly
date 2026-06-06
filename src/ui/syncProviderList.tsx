@@ -26,7 +26,7 @@ export function ProviderList(props: {
   readonly setMessage: (value: string) => void;
 }) {
   if (props.targets.length === 0) {
-    return <p className="text-sm text-[var(--color-text-secondary)]">暂无同步源。</p>;
+    return <p className="text-sm text-(--color-text-secondary)">暂无同步源。</p>;
   }
   return <div className="w-full space-y-3">{props.targets.map((target, index) => <ProviderItem key={targetIdentity(target)} target={target} index={index} {...props} />)}</div>;
 }
@@ -92,7 +92,7 @@ function ProviderItem(props: {
   const [editing, setEditing] = useState(false);
   const [deleteProviderOpen, setDeleteProviderOpen] = useState(false);
   return (
-    <div className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+    <div className="w-full rounded-lg border border-(--color-border) bg-(--color-surface) px-4 py-3">
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
         <ProviderMeta target={props.target} index={props.index} lastSyncedAt={props.lastSyncedAt[targetIdentity(props.target)]} />
         <ProviderActions
@@ -132,11 +132,11 @@ function ProviderItem(props: {
 function ProviderMeta(props: { readonly target: SyncTarget; readonly index: number; readonly lastSyncedAt?: string }) {
   return (
     <span className="min-w-0">
-      <span className="block text-sm font-medium text-[var(--color-text)]">{targetDisplayName(props.target, props.index)}</span>
-      <span className="text-xs text-[var(--color-text-secondary)]">
+      <span className="block text-sm font-medium text-(--color-text)">{targetDisplayName(props.target, props.index)}</span>
+      <span className="text-xs text-(--color-text-secondary)">
         {providerMetaText(props.target)}
       </span>
-      <span className="block text-xs text-[var(--color-text-muted)]">
+      <span className="block text-xs text-(--color-text-muted)">
         上次同步：{lastSyncText(props.lastSyncedAt)}
       </span>
     </span>
@@ -173,7 +173,7 @@ function ProviderActions(props: {
   const disabled = Boolean(busy);
   return (
     <span className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:shrink-0 sm:flex-nowrap">
-      <label className="mr-auto flex items-center gap-2 text-xs text-[var(--color-text-secondary)] sm:mr-0">
+      <label className="mr-auto flex items-center gap-2 text-xs text-(--color-text-secondary) sm:mr-0">
         <Switch checked={props.target.enabled} onChange={props.toggleEnabled} disabled={disabled} />
         自动同步
       </label>
@@ -197,7 +197,7 @@ function ProviderAuthActions(props: {
   const disabled = Boolean(busy);
   return (
     <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-      <span className="text-sm text-[var(--color-text-secondary)]">云盘账号</span>
+      <span className="text-sm text-(--color-text-secondary)">云盘账号</span>
       {!isConnectedCloudTarget(props.target) && <Button aria-label="登录" title="登录" disabled={disabled} loading={busy === "authorizing"} onClick={() => authorizeTarget({ ...props, setBusy })}><Link2 size={16} />登录</Button>}
       {isConnectedCloudTarget(props.target) && <Button aria-label="断开登录" title="断开登录" disabled={disabled} loading={busy === "disconnecting"} onClick={() => disconnectTarget({ ...props, setBusy })}><LogOut size={16} />断开</Button>}
     </div>
@@ -216,7 +216,7 @@ function ProviderSyncActions(props: {
   const disabled = Boolean(busy);
   return (
     <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-      <span className="text-sm text-[var(--color-text-secondary)]">同步文件</span>
+      <span className="text-sm text-(--color-text-secondary)">同步文件</span>
       <Button aria-label="测试连接" title="测试连接" disabled={disabled} loading={busy === "testing"} onClick={() => testTarget({ ...props, setBusy })}>
         <Search size={16} />测试
       </Button>

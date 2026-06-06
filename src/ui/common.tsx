@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { useRef, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
+import { useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { Alert, FloatingMenu, Input, Modal, Select, Tag } from "./components";
@@ -17,6 +17,8 @@ export interface FormOption {
   readonly label: string;
 }
 
+const WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"] as const;
+
 export function PageHeader(props: { readonly title: string; readonly actions?: ReactNode }) {
   void props.title;
   if (!props.actions) return null;
@@ -27,7 +29,7 @@ export function SectionPanel(props: { readonly title?: string; readonly children
   return (
     <FadeIn>
       <section className="panel p-4">
-        {props.title && <h2 className="mb-3 font-semibold text-[var(--color-text)]">{props.title}</h2>}
+        {props.title && <h2 className="mb-3 font-semibold text-(--color-text)">{props.title}</h2>}
         {props.children}
       </section>
     </FadeIn>
@@ -35,7 +37,7 @@ export function SectionPanel(props: { readonly title?: string; readonly children
 }
 
 export function EmptyState({ children }: { readonly children: ReactNode }) {
-  return <p className="row-card p-4 text-sm text-[var(--color-text-secondary)]">{children}</p>;
+  return <p className="row-card p-4 text-sm text-(--color-text-secondary)">{children}</p>;
 }
 
 export function ErrorBanner({ message }: { readonly message: string }) {
@@ -169,11 +171,15 @@ function DatePicker(props: {
     props.onChange(formatDateValue(day.format("YYYY-MM-DD"), Boolean(props.showTime)));
     setOpen(false);
   };
+  const toggleOpen = () => {
+    setMonth(selected.startOf("month"));
+    setOpen((value) => !value);
+  };
   return (
     <>
-      <button ref={triggerRef} className={`field flex items-center justify-between gap-3 text-left ${props.className ?? ""}`} type="button" onClick={() => setOpen((value) => !value)}>
+      <button ref={triggerRef} className={`field flex items-center justify-between gap-3 text-left ${props.className ?? ""}`} type="button" aria-haspopup="dialog" aria-expanded={open} onClick={toggleOpen}>
         <span>{label}</span>
-        <span className="text-xs text-[var(--color-text-muted)]">日历</span>
+        <span className="text-xs text-(--color-text-muted)">日历</span>
       </button>
       {open && (
         <FloatingMenu triggerRef={triggerRef} close={() => setOpen(false)} preferredHeight={380}>
@@ -191,6 +197,7 @@ function CalendarPanel(props: {
   readonly setMonth: (month: Dayjs) => void;
   readonly choose: (day: Dayjs) => void;
 }) {
+  const days = useMemo(() => calendarDays(props.month), [props.month]);
   return (
     <div className="ui-calendar">
       <div className="ui-calendar-header mb-3">
@@ -198,11 +205,11 @@ function CalendarPanel(props: {
         <div className="ui-calendar-title">{props.month.format("YYYY 年 M 月")}</div>
         <button className="ui-calendar-nav" type="button" aria-label="下个月" onClick={() => props.setMonth(props.month.add(1, "month"))}>›</button>
       </div>
-      <div className="ui-calendar-grid mb-1 text-center text-xs text-[var(--color-text-muted)]">
-        {["一", "二", "三", "四", "五", "六", "日"].map((day) => <span key={day}>{day}</span>)}
+      <div className="ui-calendar-grid mb-1 text-center text-xs text-(--color-text-muted)">
+        {WEEKDAY_LABELS.map((day) => <span key={day}>{day}</span>)}
       </div>
       <div className="ui-calendar-grid">
-        {calendarDays(props.month).map((day) => <CalendarDay key={day.format("YYYY-MM-DD")} day={day} {...props} />)}
+        {days.map((day) => <CalendarDay key={day.format("YYYY-MM-DD")} day={day} {...props} />)}
       </div>
     </div>
   );
@@ -213,6 +220,7 @@ function CalendarDay(props: {
   readonly month: Dayjs;
   readonly selected: Dayjs;
   readonly disabledDate?: (date: Dayjs) => boolean;
+  readonly setMonth: (month: Dayjs) => void;
   readonly choose: (day: Dayjs) => void;
 }) {
   const disabled = Boolean(props.disabledDate?.(props.day));
@@ -224,7 +232,45 @@ function CalendarDay(props: {
     muted ? "ui-calendar-day-muted" : "",
     disabled ? "ui-calendar-day-disabled" : "",
   ].filter(Boolean).join(" ");
-  return <button className={className} type="button" disabled={disabled} onClick={() => props.choose(props.day)}>{props.day.date()}</button>;
+  return (
+    <button
+      className={className}
+      type="button"
+      aria-current={props.day.isSame(dayjs(), "day") ? "date" : undefined}
+      aria-pressed={selected}
+      data-calendar-day={props.day.format("YYYY-MM-DD")}
+      disabled={disabled}
+      onClick={() => props.choose(props.day)}
+      onKeyDown={(event) => handleCalendarDayKeyDown(event, props.day, props.setMonth)}
+    >
+      {props.day.date()}
+    </button>
+  );
+}
+
+function handleCalendarDayKeyDown(event: KeyboardEvent<HTMLButtonElement>, day: Dayjs, setMonth: (month: Dayjs) => void): void {
+  const offset = calendarKeyOffset(event.key, day);
+  if (offset === null) return;
+  event.preventDefault();
+  const next = typeof offset === "number" ? day.add(offset, "day") : offset;
+  setMonth(next.startOf("month"));
+  window.requestAnimationFrame(() => focusCalendarDay(next));
+}
+
+function calendarKeyOffset(key: string, day: Dayjs): number | Dayjs | null {
+  if (key === "ArrowLeft") return -1;
+  if (key === "ArrowRight") return 1;
+  if (key === "ArrowUp") return -7;
+  if (key === "ArrowDown") return 7;
+  if (key === "Home") return -((day.day() + 6) % 7);
+  if (key === "End") return 6 - ((day.day() + 6) % 7);
+  if (key === "PageUp") return day.subtract(1, "month");
+  if (key === "PageDown") return day.add(1, "month");
+  return null;
+}
+
+function focusCalendarDay(day: Dayjs): void {
+  document.querySelector<HTMLButtonElement>(`[data-calendar-day="${day.format("YYYY-MM-DD")}"]`)?.focus({ preventScroll: true });
 }
 
 function calendarDays(month: Dayjs): readonly Dayjs[] {

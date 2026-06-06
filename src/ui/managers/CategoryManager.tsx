@@ -64,7 +64,7 @@ function CategoryRow(props: {
 function PanelHeader(props: { readonly title: string; readonly onCreate: () => void }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <h2 className="font-semibold text-[var(--color-text)]">{props.title}</h2>
+      <h2 className="font-semibold text-(--color-text)">{props.title}</h2>
       <Button variant="primary" onClick={props.onCreate}>新建</Button>
     </div>
   );

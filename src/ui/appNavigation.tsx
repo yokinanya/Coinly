@@ -37,7 +37,7 @@ export function NavigationSidebar(props: {
   return (
     <>
       <MobileHeader openMenu={() => setMobileOpen(true)} goHome={() => select("home")} />
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-[var(--color-border)] bg-[var(--color-surface)] md:block">
+      <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-(--color-border) bg-(--color-surface) md:block">
         <SidebarContent items={items} viewId={props.viewId} theme={props.theme} syncDisabled={props.syncDisabled} syncing={props.syncing} onThemeChange={props.onThemeChange} onSync={props.onSync} onSelect={select} />
       </aside>
       <Drawer
@@ -57,9 +57,9 @@ export function NavigationSidebar(props: {
 
 function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: () => void }) {
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-[var(--safe-top)] md:hidden">
+    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-(--color-border) bg-(--color-surface) pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-(--safe-top) md:hidden">
       <button
-        className="motion-press grid h-10 w-10 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)]"
+        className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted)"
         type="button"
         aria-label="打开导航"
         title="打开导航"
@@ -67,7 +67,7 @@ function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: (
       >
         <MenuIcon size={22} />
       </button>
-      <button className="text-lg font-semibold leading-none text-[var(--color-text)]" type="button" onClick={props.goHome}>Coinly</button>
+      <button className="text-lg font-semibold leading-none text-(--color-text)" type="button" onClick={props.goHome}>Coinly</button>
       <span className="h-10 w-10" aria-hidden="true" />
     </header>
   );
@@ -89,10 +89,10 @@ function SidebarContent(props: {
   return (
     <div className={`flex h-full min-h-0 flex-col bg-transparent ${paddingClass}`}>
       <div className="flex min-h-12 items-center justify-between px-2 pb-4">
-        <button className={`${props.compact ? "text-lg" : "text-2xl"} font-semibold text-[var(--color-text)]`} type="button" onClick={() => selectHome(props)}>Coinly</button>
+        <button className={`${props.compact ? "text-lg" : "text-2xl"} font-semibold text-(--color-text)`} type="button" onClick={() => selectHome(props)}>Coinly</button>
         {props.compact && (
           <button
-            className="motion-press grid h-9 w-9 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)]"
+            className="motion-press grid h-9 w-9 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted)"
             type="button"
             aria-label="关闭导航"
             title="关闭导航"
@@ -106,7 +106,7 @@ function SidebarContent(props: {
         {props.items.map((item) => (
           <button
             key={item.key}
-            className={`motion-press relative flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium ${props.viewId === item.key ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] ring-1 ring-[var(--color-accent)]/20 before:absolute before:left-0 before:top-2 before:h-6 before:w-1 before:rounded-r before:bg-[var(--color-accent)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)]"}`}
+            className={`motion-press relative flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium ${props.viewId === item.key ? "bg-(--color-accent-soft) text-(--color-accent) ring-1 ring-(--color-accent)/20 before:absolute before:left-0 before:top-2 before:h-6 before:w-1 before:rounded-r before:bg-(--color-accent)" : "text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text)"}`}
             type="button"
             onClick={() => props.onSelect(item.key)}
           >
@@ -115,7 +115,7 @@ function SidebarContent(props: {
           </button>
         ))}
       </nav>
-      <footer className="mt-4 flex justify-end gap-2 border-t border-[var(--color-border)] px-2 pt-4">
+      <footer className="mt-4 flex justify-end gap-2 border-t border-(--color-border) px-2 pt-4">
         <SyncButton disabled={props.syncDisabled} syncing={props.syncing} onSync={props.onSync} />
         <ThemeButton theme={props.theme} onChange={props.onThemeChange} />
       </footer>
@@ -126,7 +126,7 @@ function SidebarContent(props: {
 function SyncButton(props: { readonly disabled: boolean; readonly syncing: boolean; readonly onSync: () => void }) {
   return (
     <button
-      className="motion-press grid h-10 w-10 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
+      className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50"
       type="button"
       title="同步"
       aria-label="同步"
@@ -142,7 +142,7 @@ function ThemeButton(props: { readonly theme: ThemeMode; readonly onChange: (the
   const next = nextTheme(props.theme);
   return (
     <button
-      className="motion-press grid h-10 w-10 place-items-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)]"
+      className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text)"
       type="button"
       title={`切换到${themeLabel(next)}`}
       aria-label={`当前主题：${themeLabel(props.theme)}，切换到${themeLabel(next)}`}

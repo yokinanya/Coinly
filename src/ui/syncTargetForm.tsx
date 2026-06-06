@@ -49,7 +49,7 @@ function S3Fields(props: {
           <TextField label="存储桶" value={props.target.bucket ?? ""} onChange={(bucket) => props.update({ bucket })} />
           <TextField label="对象路径" value={props.target.objectKey} onChange={(objectKey) => props.update({ objectKey })} />
         </div>
-        <label className="mt-3 flex min-h-10 items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+        <label className="mt-3 flex min-h-10 items-center gap-2 text-sm text-(--color-text-secondary)">
           <Switch checked={Boolean(props.target.forcePathStyle)} onChange={(forcePathStyle: boolean) => props.update({ forcePathStyle })} />
           使用路径样式访问
         </label>
@@ -72,8 +72,8 @@ function FormGroup(props: {
 }) {
   return (
     <section className="surface-panel space-y-3 p-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-        <span className="grid h-7 w-7 place-items-center rounded-md bg-[var(--color-accent-soft)] text-[var(--color-accent)]">{props.icon}</span>
+      <div className="flex items-center gap-2 text-sm font-semibold text-(--color-text)">
+        <span className="grid h-7 w-7 place-items-center rounded-md bg-(--color-accent-soft) text-(--color-accent)">{props.icon}</span>
         {props.title}
       </div>
       {props.children}
@@ -83,7 +83,7 @@ function FormGroup(props: {
 
 function CorsHint() {
   return (
-    <p className="mt-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3 text-xs leading-5 text-[var(--color-text-secondary)]">
+    <p className="mt-3 rounded-md border border-(--color-border) bg-(--color-surface-muted) p-3 text-xs leading-5 text-(--color-text-secondary)">
       腾讯云 COS 需要在 Bucket CORS 中允许当前站点 Origin、GET/PUT/DELETE/OPTIONS、Authorization 与 x-amz-* 请求头，并暴露 ETag。
     </p>
   );
@@ -93,7 +93,7 @@ function OneDriveFields(props: {
   readonly target: SyncTarget;
 }) {
   return (
-    <p className="surface-panel p-3 text-sm text-[var(--color-text-secondary)]">
+    <p className="surface-panel p-3 text-sm text-(--color-text-secondary)">
       当前授权账户：{oneDriveAccountLabel(props.target)}
     </p>
   );
@@ -103,7 +103,7 @@ function GoogleDriveFields(props: {
   readonly target: SyncTarget;
 }) {
   return (
-    <p className="surface-panel p-3 text-sm text-[var(--color-text-secondary)]">
+    <p className="surface-panel p-3 text-sm text-(--color-text-secondary)">
       当前授权账户：{props.target.username || "未授权"}
     </p>
   );

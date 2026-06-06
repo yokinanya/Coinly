@@ -20,7 +20,7 @@ export function TagManager({ data, setData, setMessage }: ManagerProps) {
 
   return (
     <section className="space-y-4">
-      <h2 className="font-semibold text-[var(--color-text)]">标签</h2>
+      <h2 className="font-semibold text-(--color-text)">标签</h2>
       <DynamicTagList
         values={data.tags.map((tag) => tag.name)}
         addLabel="新增标签"

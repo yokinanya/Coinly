@@ -71,8 +71,8 @@ function SyncToolbar(props: {
   return (
     <div className="toolbar flex flex-wrap items-center justify-between gap-3 p-3">
       <div className="min-w-0">
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">同步源</h3>
-        <p className="text-xs text-[var(--color-text-secondary)]">配置云端加密包位置，手动验证连接后再开启自动同步。</p>
+        <h3 className="text-sm font-semibold text-(--color-text)">同步源</h3>
+        <p className="text-xs text-(--color-text-secondary)">配置云端加密包位置，手动验证连接后再开启自动同步。</p>
       </div>
       <div className="flex flex-wrap gap-2">
       <Button onClick={props.onAdd}><Plus size={16} />添加同步源</Button>

@@ -2,7 +2,8 @@ import { useState } from "react";
 import { createStatementForAccount } from "../domain/operations";
 import { deleteStatement, revokeStatementSettlement, settleStatement, statementDetails } from "../domain/statements";
 import type { AppData, CreditCardStatement, CurrencyCode, Transaction } from "../domain/types";
-import { ConfirmDialog, EmptyState, ErrorBanner, SelectField, SuccessBanner, TextField } from "./common";
+import { ConfirmDialog, EmptyState, MessageBanner, SelectField, TextField } from "./common";
+import type { StatusMessage } from "./common";
 import { money } from "./format";
 import { Button, Drawer } from "./components";
 import { AnimatedRow } from "./managers/ManagerCommon";
@@ -17,29 +18,34 @@ export function CreditStatementsView(props: {
   readonly onBack: () => void;
 }) {
   const creditAccounts = props.data.accounts.filter((account) => account.kind === "credit");
-  const [message, setMessage] = useState("");
+  const [status, setStatus] = useState<StatusMessage>();
+  const [creatingAccountId, setCreatingAccountId] = useState<string>();
   const createStatement = (accountId: string) => {
+    if (creatingAccountId) return;
     const account = creditAccounts.find((item) => item.id === accountId);
     if (!account) return;
+    setCreatingAccountId(accountId);
     try {
       props.setData(createStatementForAccount(props.data, account));
-      setMessage("账期已生成");
+      setStatus({ tone: "success", text: "账期已生成" });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "账期生成失败");
+      setStatus({ tone: "error", text: error instanceof Error ? error.message : "账期生成失败" });
+    } finally {
+      setCreatingAccountId(undefined);
     }
   };
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-[var(--color-text)]">信用卡账期</h1>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">生成、查看并结算信用卡账期。</p>
+          <h1 className="text-lg font-semibold text-(--color-text)">信用卡账期</h1>
+          <p className="mt-1 text-sm text-(--color-text-secondary)">生成、查看并结算信用卡账期。</p>
         </div>
         <Button onClick={props.onBack}>返回明细</Button>
       </div>
-      <StatusMessage message={message} />
-      <StatementActions creditAccounts={creditAccounts} onCreate={createStatement} />
-      <StatementGrid data={props.data} setData={props.setData} setMessage={setMessage} />
+      <StatementStatusMessage status={status} />
+      <StatementActions creditAccounts={creditAccounts} creatingAccountId={creatingAccountId} onCreate={createStatement} />
+      <StatementGrid data={props.data} setData={props.setData} setStatus={setStatus} />
       {creditAccounts.length === 0 && <EmptyState>暂无信用卡账户。</EmptyState>}
     </section>
   );
@@ -58,24 +64,24 @@ export function CreditStatementsDrawer(props: {
   );
 }
 
-function StatusMessage({ message }: { readonly message: string }) {
-  const error = message.includes("失败") || message.includes("已存在");
-  return (
-    <>
-      <ErrorBanner message={error ? message : ""} />
-      {message && !error && <AnimatedRow><SuccessBanner message={message} /></AnimatedRow>}
-    </>
-  );
+function StatementStatusMessage({ status }: { readonly status?: StatusMessage }) {
+  if (!status?.text) return null;
+  return <AnimatedRow><MessageBanner message={status.text} tone={status.tone} /></AnimatedRow>;
 }
 
 function StatementActions(props: {
   readonly creditAccounts: readonly AppData["accounts"][number][];
+  readonly creatingAccountId?: string;
   readonly onCreate: (accountId: string) => void;
 }) {
   if (props.creditAccounts.length === 0) return null;
   return (
     <div className="panel flex flex-wrap gap-2 p-4">
-      {props.creditAccounts.map((account) => <Button key={account.id} onClick={() => props.onCreate(account.id)}>生成 {account.name} 本期账单</Button>)}
+      {props.creditAccounts.map((account) => (
+        <Button key={account.id} loading={props.creatingAccountId === account.id} disabled={Boolean(props.creatingAccountId)} onClick={() => props.onCreate(account.id)}>
+          生成 {account.name} 本期账单
+        </Button>
+      ))}
     </div>
   );
 }
@@ -83,13 +89,13 @@ function StatementActions(props: {
 function StatementGrid(props: {
   readonly data: AppData;
   readonly setData: (data: AppData) => void;
-  readonly setMessage: (message: string) => void;
+  readonly setStatus: (status: StatusMessage) => void;
 }) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {props.data.statements.map((statement) => (
         <AnimatedRow key={statement.id}>
-          <StatementPanel data={props.data} statement={statement} setData={props.setData} setMessage={props.setMessage} />
+          <StatementPanel data={props.data} statement={statement} setData={props.setData} setStatus={props.setStatus} />
         </AnimatedRow>
       ))}
     </div>
@@ -100,7 +106,7 @@ function StatementPanel(props: {
   readonly data: AppData;
   readonly statement: CreditCardStatement;
   readonly setData: (data: AppData) => void;
-  readonly setMessage: (message: string) => void;
+  readonly setStatus: (status: StatusMessage) => void;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [settlementOpen, setSettlementOpen] = useState(false);
@@ -113,7 +119,7 @@ function StatementPanel(props: {
       <StatementSummary accountName={account?.name ?? "信用卡账期"} statement={props.statement} rows={details.totals} details={details.transactions} />
       <StatementButtons statement={props.statement} onDelete={() => setDeleteOpen(true)} onDetail={() => setDetailOpen(true)} onSettle={() => setSettlementOpen(true)} onRevoke={() => setConfirmOpen(true)} />
       <DetailDrawer open={detailOpen} statement={props.statement} transactions={details.transactions} onClose={() => setDetailOpen(false)} />
-      <SettlementDrawer data={props.data} statement={props.statement} open={settlementOpen} setData={props.setData} setMessage={props.setMessage} onClose={() => setSettlementOpen(false)} />
+      <SettlementDrawer data={props.data} statement={props.statement} open={settlementOpen} setData={props.setData} setStatus={props.setStatus} onClose={() => setSettlementOpen(false)} />
       <ConfirmDialog open={confirmOpen} title="撤销结算" description="撤销后会移除该账期对应的还款记录。" onCancel={() => setConfirmOpen(false)} onConfirm={() => revoke(props, setConfirmOpen)} />
       <ConfirmDialog open={deleteOpen} title="删除账期" description="删除后会移除该账期记录；如果账期已结算，也会删除对应还款记录。" onCancel={() => setDeleteOpen(false)} onConfirm={() => removeStatement(props, setDeleteOpen)} />
     </div>
@@ -131,12 +137,12 @@ function StatementSummary(props: {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold">{props.accountName}</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{dateRange(props.statement.startAt, props.statement.endAt)}</p>
+          <p className="mt-1 text-sm text-(--color-text-secondary)">{dateRange(props.statement.startAt, props.statement.endAt)}</p>
         </div>
         <span className={statusClass(props.statement.paid)}>{props.statement.paid ? "已结算" : "待结算"}</span>
       </div>
       <div className="mt-3 grid gap-2">{props.rows.map((row) => <TotalRow key={row.currency} currency={row.currency} amount={row.amount} />)}</div>
-      <p className="row-card mt-3 p-3 text-xs text-[var(--color-text-secondary)]">账期内消费明细：{props.details.length} 条</p>
+      <p className="row-card mt-3 p-3 text-xs text-(--color-text-secondary)">账期内消费明细：{props.details.length} 条</p>
       {props.statement.paid && <SettlementSummary statement={props.statement} />}
     </>
   );
@@ -167,7 +173,7 @@ function DetailDrawer(props: {
 }) {
   return (
     <Drawer open={props.open} title="账期明细" width={DETAIL_DRAWER_WIDTH} onClose={props.onClose}>
-      <p className="mb-3 text-sm text-[var(--color-text-secondary)]">{dateRange(props.statement.startAt, props.statement.endAt)}</p>
+      <p className="mb-3 text-sm text-(--color-text-secondary)">{dateRange(props.statement.startAt, props.statement.endAt)}</p>
       <div className="space-y-2">{props.transactions.map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} />)}</div>
       {props.transactions.length === 0 && <EmptyState>该账期暂无消费明细。</EmptyState>}
     </Drawer>
@@ -179,29 +185,35 @@ function SettlementDrawer(props: {
   readonly statement: CreditCardStatement;
   readonly open: boolean;
   readonly setData: (data: AppData) => void;
-  readonly setMessage: (message: string) => void;
+  readonly setStatus: (status: StatusMessage) => void;
   readonly onClose: () => void;
 }) {
   const [amount, setAmount] = useState("0");
   const [currency, setCurrency] = useState<CurrencyCode>(props.statement.primaryCurrency);
   const [sourceAccountId, setSourceAccountId] = useState("");
-  const footer = <SettlementFooter onCancel={props.onClose} onSave={() => settle(props, { amount, currency, sourceAccountId })} />;
+  const [saving, setSaving] = useState(false);
+  const save = () => {
+    if (saving) return;
+    setSaving(true);
+    if (!settle(props, { amount, currency, sourceAccountId })) setSaving(false);
+  };
+  const footer = <SettlementFooter saving={saving} onCancel={props.onClose} onSave={save} />;
   return (
     <Drawer open={props.open} title="记录账期结算" width={SETTLEMENT_DRAWER_WIDTH} footer={footer} onClose={props.onClose}>
       <div className="space-y-4">
         <SelectField label="还款来源（可选）" value={sourceAccountId} options={sourceOptions(props.data, props.statement.accountId)} onChange={setSourceAccountId} />
-        <TextField label="主币种结算金额" value={amount} onChange={setAmount} />
+        <TextField label="主币种结算金额" type="number" value={amount} onChange={setAmount} />
         <SelectField label="结算币种" value={currency} options={props.data.currencies.map((item) => ({ value: item, label: item }))} onChange={(value) => setCurrency(value as CurrencyCode)} />
       </div>
     </Drawer>
   );
 }
 
-function SettlementFooter(props: { readonly onCancel: () => void; readonly onSave: () => void }) {
+function SettlementFooter(props: { readonly saving: boolean; readonly onCancel: () => void; readonly onSave: () => void }) {
   return (
     <div className="flex justify-end gap-2">
-      <Button onClick={props.onCancel}>取消</Button>
-      <Button variant="primary" onClick={props.onSave}>保存</Button>
+      <Button disabled={props.saving} onClick={props.onCancel}>取消</Button>
+      <Button variant="primary" loading={props.saving} onClick={props.onSave}>保存</Button>
     </div>
   );
 }
@@ -210,7 +222,7 @@ function SettlementSummary({ statement }: { readonly statement: CreditCardStatem
   return (
     <div className="row-card mt-3 p-3 text-sm">
       已结算：{money(statement.settlementAmount ?? 0, statement.settlementCurrency ?? statement.primaryCurrency)}
-      {statement.settledAt && <span className="ml-2 text-xs text-[var(--color-text-secondary)]">{new Date(statement.settledAt).toLocaleDateString("zh-CN")}</span>}
+      {statement.settledAt && <span className="ml-2 text-xs text-(--color-text-secondary)">{new Date(statement.settledAt).toLocaleDateString("zh-CN")}</span>}
     </div>
   );
 }
@@ -231,39 +243,41 @@ function TotalRow(props: { readonly currency: CurrencyCode; readonly amount: num
 function settle(
   props: Parameters<typeof SettlementDrawer>[0],
   draft: { readonly amount: string; readonly currency: CurrencyCode; readonly sourceAccountId: string },
-) {
+): boolean {
   try {
     props.setData(settleStatement(props.data, props.statement.id, draft.sourceAccountId, Number(draft.amount), draft.currency));
-    props.setMessage("账期已结算");
+    props.setStatus({ tone: "success", text: "账期已结算" });
     props.onClose();
+    return true;
   } catch (error) {
-    props.setMessage(error instanceof Error ? error.message : "结算失败");
+    props.setStatus({ tone: "error", text: error instanceof Error ? error.message : "结算失败" });
+    return false;
   }
 }
 
 function revoke(props: Parameters<typeof StatementPanel>[0], setConfirmOpen: (open: boolean) => void) {
   try {
     props.setData(revokeStatementSettlement(props.data, props.statement.id));
-    props.setMessage("已撤销结算");
+    props.setStatus({ tone: "success", text: "已撤销结算" });
     setConfirmOpen(false);
   } catch (error) {
-    props.setMessage(error instanceof Error ? error.message : "撤销失败");
+    props.setStatus({ tone: "error", text: error instanceof Error ? error.message : "撤销失败" });
   }
 }
 
 function removeStatement(props: Parameters<typeof StatementPanel>[0], setDeleteOpen: (open: boolean) => void) {
   try {
     props.setData(deleteStatement(props.data, props.statement.id));
-    props.setMessage("账期已删除");
+    props.setStatus({ tone: "success", text: "账期已删除" });
     setDeleteOpen(false);
   } catch (error) {
-    props.setMessage(error instanceof Error ? error.message : "账期删除失败");
+    props.setStatus({ tone: "error", text: error instanceof Error ? error.message : "账期删除失败" });
   }
 }
 
 function statusClass(paid: boolean): string {
   const common = "rounded-md px-2 py-1 text-xs font-medium";
-  return paid ? `${common} bg-[var(--color-success-soft)] text-[var(--color-success)]` : `${common} bg-[var(--color-warning-soft)] text-[var(--color-warning)]`;
+  return paid ? `${common} bg-(--color-success-soft) text-(--color-success)` : `${common} bg-(--color-warning-soft) text-(--color-warning)`;
 }
 
 function dateRange(start: string, end: string): string {

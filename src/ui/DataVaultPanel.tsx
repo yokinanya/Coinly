@@ -183,7 +183,7 @@ function SyncSettingsExportModal(props: {
     <Modal centered open={props.open} title="导出同步配置" footer={footer} onCancel={() => closeSyncExportModal(props.close, setQrDataUrl)}>
       <div className="space-y-3">
         {targets.length === 0
-          ? <p className="text-sm text-[var(--color-text-secondary)]">暂无同步源。</p>
+          ? <p className="text-sm text-(--color-text-secondary)">暂无同步源。</p>
           : targets.map((target) => (
             <label key={targetIdentity(target)} className="flex min-h-9 items-center gap-2 text-sm">
               <Checkbox checked={props.selected === targetIdentity(target)} onChange={() => props.setSelected(targetIdentity(target))} />
@@ -191,9 +191,9 @@ function SyncSettingsExportModal(props: {
             </label>
           ))}
         {qrDataUrl && (
-          <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-3">
+          <div className="space-y-2 rounded-lg border border-(--color-border) bg-(--color-background) p-3">
             <img className="mx-auto h-64 w-64 rounded bg-white p-2" src={qrDataUrl} alt="同步配置二维码" />
-            <p className="text-center text-xs text-[var(--color-text-secondary)]">在另一台设备创建账本时扫描此二维码。</p>
+            <p className="text-center text-xs text-(--color-text-secondary)">在另一台设备创建账本时扫描此二维码。</p>
           </div>
         )}
       </div>
@@ -224,7 +224,7 @@ function ImportPreviewModal(props: {
 
 function SummaryGrid({ summary }: { readonly summary: DataSummary }) {
   return (
-    <div className="grid gap-2 text-sm text-[var(--color-text-secondary)] sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-2 text-sm text-(--color-text-secondary) sm:grid-cols-2 xl:grid-cols-4">
       <span>版本：{summary.schemaVersion}</span>
       <span>更新时间：{new Date(summary.updatedAt).toLocaleString("zh-CN")}</span>
       <span>本地版本：{summary.localVersion}</span>

@@ -12,10 +12,10 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
-  primary: "border-[var(--color-accent)] bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)]",
-  default: "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]",
-  danger: "border-[var(--color-danger-border)] bg-[var(--color-danger-soft)] text-[var(--color-danger)] hover:border-[var(--color-danger)] hover:bg-[var(--color-danger-hover)]",
-  ghost: "border-transparent bg-transparent text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]",
+  primary: "border-(--color-accent) bg-(--color-accent) text-white hover:bg-(--color-accent-hover)",
+  default: "border-(--color-border) bg-(--color-surface) text-(--color-text) hover:bg-(--color-surface-muted)",
+  danger: "border-(--color-danger-border) bg-(--color-danger-soft) text-(--color-danger) hover:border-(--color-danger) hover:bg-(--color-danger-hover)",
+  ghost: "border-transparent bg-transparent text-(--color-text) hover:bg-(--color-surface-muted)",
 };
 
 export function Button(props: ButtonProps) {

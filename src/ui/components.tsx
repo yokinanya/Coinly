@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import type { ChangeEvent, CSSProperties, InputHTMLAttributes, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -11,9 +11,22 @@ type Tone = "info" | "success" | "warning" | "error";
 const LIST_IGNORE = "__COINLY_UPLOAD_IGNORE__";
 const FLOATING_MENU_MARGIN = 8;
 const FLOATING_MENU_MAX_WIDTH = 448;
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 
 export function Alert(props: { readonly type?: Tone; readonly message: ReactNode }) {
-  return <div className={cn("alert", `alert-${props.type ?? "info"}`)}>{props.message}</div>;
+  const type = props.type ?? "info";
+  return (
+    <div className={cn("alert", `alert-${type}`)} role={type === "error" ? "alert" : "status"} aria-live={type === "error" ? "assertive" : "polite"} aria-atomic="true">
+      {props.message}
+    </div>
+  );
 }
 
 export function Checkbox(props: {
@@ -37,7 +50,7 @@ export function Checkbox(props: {
 }
 
 export function Divider() {
-  return <hr className="border-[var(--color-border)]" />;
+  return <hr className="border-(--color-border)" />;
 }
 
 export function Switch(props: {
@@ -69,14 +82,16 @@ export function Modal(props: {
   readonly onCancel?: () => void;
   readonly onOk?: () => void;
 }) {
-  useEscapeClose(props.open, props.onCancel);
+  const titleId = useId();
+  const panelRef = useRef<HTMLElement>(null);
+  useDialogBehavior(props.open, panelRef, props.onCancel);
   if (!props.open) return null;
   const style = { "--dialog-width": dialogWidth(props.width) } as CSSProperties;
   return (
     <div className="dialog-root" role="presentation">
       <button className="dialog-backdrop" type="button" aria-label="关闭弹窗" onClick={props.onCancel} />
-      <section className={cn("dialog-panel", props.centered && "dialog-centered")} style={style} role="dialog" aria-modal="true">
-        <DialogHeader title={props.title} close={props.onCancel} />
+      <section ref={panelRef} className={cn("dialog-panel", props.centered && "dialog-centered")} style={style} role="dialog" aria-modal="true" aria-labelledby={props.title ? titleId : undefined} tabIndex={-1} data-dialog-panel>
+        <DialogHeader title={props.title} titleId={titleId} close={props.onCancel} />
         <div className="dialog-body">{props.children}</div>
         <DialogFooter footer={props.footer} ok={props.onOk} cancel={props.onCancel} />
       </section>
@@ -95,14 +110,16 @@ export function Drawer(props: {
   readonly closable?: boolean;
   readonly onClose?: () => void;
 }) {
-  useEscapeClose(props.open, props.onClose);
+  const titleId = useId();
+  const panelRef = useRef<HTMLElement>(null);
+  useDialogBehavior(props.open, panelRef, props.onClose);
   if (!props.open) return null;
   const style = { "--drawer-width": dialogWidth(props.width) } as CSSProperties;
   return (
     <div className="dialog-root" role="presentation">
       <button className="dialog-backdrop" type="button" aria-label="关闭抽屉" onClick={props.onClose} />
-      <section className={cn("drawer-panel", props.placement === "left" && "drawer-left", props.className?.content)} style={style} role="dialog" aria-modal="true">
-        <DialogHeader title={props.title} close={props.closable === false ? undefined : props.onClose} />
+      <section ref={panelRef} className={cn("drawer-panel", props.placement === "left" && "drawer-left", props.className?.content)} style={style} role="dialog" aria-modal="true" aria-labelledby={props.title ? titleId : undefined} tabIndex={-1} data-dialog-panel>
+        <DialogHeader title={props.title} titleId={titleId} close={props.closable === false ? undefined : props.onClose} />
         <div className={cn("drawer-body", props.className?.body)}>{props.children}</div>
         {props.footer && <footer className="dialog-footer">{props.footer}</footer>}
       </section>
@@ -110,11 +127,11 @@ export function Drawer(props: {
   );
 }
 
-function DialogHeader(props: { readonly title?: ReactNode; readonly close?: () => void }) {
+function DialogHeader(props: { readonly title?: ReactNode; readonly titleId: string; readonly close?: () => void }) {
   if (!props.title && !props.close) return null;
   return (
     <header className="dialog-header">
-      {props.title && <h2 className="text-base font-semibold">{props.title}</h2>}
+      {props.title && <h2 id={props.titleId} className="text-base font-semibold">{props.title}</h2>}
       {props.close && <Button aria-label="关闭" title="关闭" variant="ghost" onClick={props.close}><X size={16} /></Button>}
     </header>
   );
@@ -126,13 +143,64 @@ function DialogFooter(props: { readonly footer?: ReactNode; readonly ok?: () => 
   return <footer className="dialog-footer"><Button onClick={props.cancel}>取消</Button><Button variant="primary" onClick={props.ok}>确定</Button></footer>;
 }
 
-function useEscapeClose(open: boolean, close?: () => void): void {
+function useDialogBehavior(open: boolean, panelRef: RefObject<HTMLElement | null>, close?: () => void): void {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (!open || !close) return undefined;
-    const listener = (event: KeyboardEvent) => event.key === "Escape" && close();
+    if (!open) return undefined;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    window.setTimeout(() => focusInitialDialogElement(panelRef.current));
+    return () => previousFocusRef.current?.focus({ preventScroll: true });
+  }, [open, panelRef]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const listener = (event: KeyboardEvent) => {
+      const panel = panelRef.current;
+      if (!panel || !isTopDialog(panel)) return;
+      if (event.key === "Escape" && close) {
+        close();
+        return;
+      }
+      if (event.key === "Tab") trapDialogFocus(event, panel);
+    };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [close, open]);
+  }, [close, open, panelRef]);
+}
+
+function focusInitialDialogElement(panel: HTMLElement | null): void {
+  if (!panel || !isTopDialog(panel)) return;
+  const target = focusableElements(panel)[0] ?? panel;
+  target.focus({ preventScroll: true });
+}
+
+function trapDialogFocus(event: KeyboardEvent, panel: HTMLElement): void {
+  const elements = focusableElements(panel);
+  if (elements.length === 0) {
+    event.preventDefault();
+    panel.focus({ preventScroll: true });
+    return;
+  }
+  const first = elements[0];
+  const last = elements[elements.length - 1];
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || !panel.contains(active))) {
+    event.preventDefault();
+    last.focus({ preventScroll: true });
+    return;
+  }
+  if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus({ preventScroll: true });
+  }
+}
+
+function focusableElements(panel: HTMLElement): readonly HTMLElement[] {
+  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => !element.hasAttribute("disabled") && !element.getAttribute("aria-hidden"));
+}
+
+function isTopDialog(panel: HTMLElement): boolean {
+  const panels = Array.from(document.querySelectorAll<HTMLElement>("[data-dialog-panel]"));
+  return panels[panels.length - 1] === panel;
 }
 
 function dialogWidth(width?: number | string): string {
@@ -185,7 +253,7 @@ export function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, "onC
     <span className="ui-select-root">
       <button
         ref={triggerRef}
-        className={cn("field flex items-center justify-between gap-3 text-left", !selected.length && "text-[var(--color-text-muted)]", className)}
+        className={cn("field flex items-center justify-between gap-3 text-left", !selected.length && "text-(--color-text-muted)", className)}
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
@@ -193,7 +261,7 @@ export function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, "onC
         onClick={() => setOpen((current) => !current)}
       >
         <span className="min-w-0 truncate">{label}</span>
-        <span className="shrink-0 text-xs text-[var(--color-text-muted)]">▾</span>
+        <span className="shrink-0 text-xs text-(--color-text-muted)">▾</span>
       </button>
       {open && (
         <LocalFloatingMenu openUp={openUp} close={() => setOpen(false)}>
@@ -210,7 +278,7 @@ export function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, "onC
                   onClick={() => choose(option.value)}
                 >
                   <span className="min-w-0 truncate">{option.label}</span>
-                  {checked && <span className="shrink-0 text-[var(--color-accent)]">✓</span>}
+                  {checked && <span className="shrink-0 text-(--color-accent)">✓</span>}
                 </button>
               );
             })}
@@ -361,7 +429,7 @@ export function Popconfirm(props: {
     <>
       {props.children && <span onClick={() => setInternalOpen(true)}>{props.children}</span>}
       <Modal open={open} title={props.title} footer={<ConfirmFooter close={close} confirm={props.onConfirm} /> } onCancel={close}>
-        {props.description && <p className="text-sm text-[var(--color-text-secondary)]">{props.description}</p>}
+        {props.description && <p className="text-sm text-(--color-text-secondary)">{props.description}</p>}
       </Modal>
     </>
   );
@@ -451,7 +519,7 @@ function ListItemMeta(props: { readonly title?: ReactNode; readonly description?
   return (
     <span className="block min-w-0">
       <span className="block truncate font-medium">{props.title}</span>
-      {props.description && <span className="block truncate text-sm text-[var(--color-text-secondary)]">{props.description}</span>}
+      {props.description && <span className="block truncate text-sm text-(--color-text-secondary)">{props.description}</span>}
     </span>
   );
 }

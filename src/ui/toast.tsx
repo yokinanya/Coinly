@@ -7,7 +7,11 @@ type ToastItem = { readonly id: string; readonly text: string; readonly tone: To
 export function ToastViewport() {
   const [toasts, setToasts] = useState<readonly ToastItem[]>([]);
   useEffect(() => subscribeToToasts(setToasts), []);
-  return <div className="toast-viewport">{toasts.map((toast) => <div key={toast.id} className={cn("toast", `alert-${toast.tone}`)}>{toast.text}</div>)}</div>;
+  return (
+    <div className="toast-viewport" aria-live="polite" aria-atomic="true">
+      {toasts.map((toast) => <div key={toast.id} className={cn("toast", `alert-${toast.tone}`)} role={toast.tone === "error" ? "alert" : "status"}>{toast.text}</div>)}
+    </div>
+  );
 }
 
 function subscribeToToasts(setToasts: Dispatch<SetStateAction<readonly ToastItem[]>>) {

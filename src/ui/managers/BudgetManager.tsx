@@ -95,13 +95,13 @@ function BudgetSummary(props: {
     <div>
       <div className="flex items-center justify-between gap-3">
         <h2 className="truncate font-semibold">{props.budget.name}</h2>
-        <span className="text-sm text-[var(--color-text-secondary)]">{BUDGET_PERIOD_LABELS[props.budget.period]}</span>
+        <span className="text-sm text-(--color-text-secondary)">{BUDGET_PERIOD_LABELS[props.budget.period]}</span>
       </div>
-      <div className="mt-3 h-2 rounded bg-[var(--color-surface-muted)]">
-        <div className="h-2 rounded bg-[var(--color-accent)]" style={{ width: `${props.percent}%` }} />
+      <div className="mt-3 h-2 rounded bg-(--color-surface-muted)">
+        <div className="h-2 rounded bg-(--color-accent)" style={{ width: `${props.percent}%` }} />
       </div>
       <p className="mt-2 text-sm">{money(props.spent, props.budget.currency)} / {money(props.budget.amount, props.budget.currency)}</p>
-      <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{dateRange(start, end)}</p>
+      <p className="mt-1 text-xs text-(--color-text-secondary)">{dateRange(start, end)}</p>
     </div>
   );
 }

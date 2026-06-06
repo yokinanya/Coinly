@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { AppData, Transaction } from "../domain/types";
 import { dateOnly, money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
@@ -32,7 +32,7 @@ export function TransactionTable(props: TransactionTableProps) {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(1);
   const rows = useMemo(() => filteredRows(sortByOccurredAt(props.transactions), filters), [filters, props.transactions]);
-  const pageRows = currentPageRows(rows, page, pageSize);
+  const pageRows = useMemo(() => currentPageRows(rows, page, pageSize), [page, pageSize, rows]);
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
   return (
     <div className="panel overflow-hidden">
@@ -51,7 +51,7 @@ function TableFilters(props: {
   readonly setFilters: (filters: Filters) => void;
 }) {
   return (
-    <div className="grid gap-2 border-b border-[var(--color-border)] p-3 sm:grid-cols-4">
+    <div className="grid gap-2 border-b border-(--color-border) p-3 sm:grid-cols-4">
       <Select value={props.filters.currency} options={currencyOptions(props.data)} onChange={(value) => props.setFilters({ ...props.filters, currency: String(value) })} />
       <Select value={props.filters.accountId} options={entityOptions(props.data.accounts, "全部账户")} onChange={(value) => props.setFilters({ ...props.filters, accountId: String(value) })} />
       <Select value={props.filters.categoryId} options={entityOptions(props.data.categories, "全部分类")} onChange={(value) => props.setFilters({ ...props.filters, categoryId: String(value) })} />
@@ -62,7 +62,7 @@ function TableFilters(props: {
 
 function RowsTable(props: TransactionTableProps & { readonly rows: readonly Transaction[] }) {
   if (props.rows.length === 0) {
-    return <p className="p-6 text-center text-sm text-[var(--color-text-secondary)]">暂无交易</p>;
+    return <p className="p-6 text-center text-sm text-(--color-text-secondary)">暂无交易</p>;
   }
   return (
     <>
@@ -75,8 +75,8 @@ function RowsTable(props: TransactionTableProps & { readonly rows: readonly Tran
 function DesktopRowsTable(props: TransactionTableProps & { readonly rows: readonly Transaction[] }) {
   return (
     <div className="hidden overflow-x-auto md:block">
-      <table className="w-full min-w-[880px] border-collapse text-sm">
-        <thead className="bg-[var(--color-surface-muted)] text-left text-xs text-[var(--color-text-secondary)]">
+      <table className="w-full min-w-220 border-collapse text-sm">
+        <thead className="bg-(--color-surface-muted) text-left text-xs text-(--color-text-secondary)">
           <tr>{HEADERS.map((header) => <th key={header} className="px-3 py-2 font-semibold">{header}</th>)}</tr>
         </thead>
         <tbody>{props.rows.map((row) => <TransactionRow key={row.id} {...props} row={row} />)}</tbody>
@@ -95,50 +95,50 @@ function MobileRowsList(props: TransactionTableProps & { readonly rows: readonly
 
 const HEADERS = ["", "日期", "金额", "账户", "分类", "类型", "备注", "操作"] as const;
 
-function TransactionRow(props: TransactionTableProps & { readonly row: Transaction; readonly rows: readonly Transaction[] }) {
+const TransactionRow = memo(function TransactionRow(props: TransactionTableProps & { readonly row: Transaction; readonly rows: readonly Transaction[] }) {
   const row = props.row;
   const selected = props.selectedIds.includes(row.id);
   return (
-    <tr className={`border-t border-[var(--color-border)] transition hover:bg-[var(--color-surface-muted)] ${selected ? "bg-[var(--color-accent-soft)]" : ""}`}>
+    <tr className={`border-t border-(--color-border) transition hover:bg-(--color-surface-muted) ${selected ? "bg-(--color-accent-soft)" : ""}`}>
       <td className="px-3 py-2"><Checkbox checked={selected} onChange={(checked) => toggleOne(props.selectedIds, row.id, checked, props.setSelectedIds)} /></td>
       <td className="px-3 py-2">{dateOnly(row.occurredAt)}</td>
       <td className="px-3 py-2 tabular-nums">{money(row.amount, row.currency)}</td>
       <td className="px-3 py-2">{props.accounts[row.accountId] ?? "-"}</td>
       <td className="px-3 py-2">{props.categories[row.categoryId ?? ""] ?? "-"}</td>
       <td className="px-3 py-2">{TRANSACTION_KIND_LABELS[row.kind]}</td>
-      <td className="max-w-64 truncate px-3 py-2">{row.note || "-"}</td>
+      <td className="max-w-64 truncate px-3 py-2" title={row.note || undefined}>{row.note || "-"}</td>
       <td className="px-3 py-2"><RowActions row={row} edit={props.onEdit} refund={props.onRefund} remove={props.onDelete} /></td>
     </tr>
   );
-}
+});
 
-function TransactionCard(props: TransactionTableProps & { readonly row: Transaction; readonly rows: readonly Transaction[] }) {
+const TransactionCard = memo(function TransactionCard(props: TransactionTableProps & { readonly row: Transaction; readonly rows: readonly Transaction[] }) {
   const row = props.row;
   const selected = props.selectedIds.includes(row.id);
   return (
-    <article className={`row-card min-w-0 overflow-hidden p-3 ${selected ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]" : ""}`}>
+    <article className={`row-card min-w-0 overflow-hidden p-3 ${selected ? "border-(--color-accent) bg-(--color-accent-soft)" : ""}`}>
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <Checkbox checked={selected} onChange={(checked) => toggleOne(props.selectedIds, row.id, checked, props.setSelectedIds)} />
-            <span className="min-w-0 truncate text-xs text-[var(--color-text-secondary)]">{dateOnly(row.occurredAt)} · {TRANSACTION_KIND_LABELS[row.kind]}</span>
+            <span className="min-w-0 truncate text-xs text-(--color-text-secondary)">{dateOnly(row.occurredAt)} · {TRANSACTION_KIND_LABELS[row.kind]}</span>
           </div>
-          <div className="mt-2 line-clamp-2 break-words text-sm font-medium">{row.note || "无备注"}</div>
+          <div className="mt-2 line-clamp-2 wrap-break-word text-sm font-medium" title={row.note || undefined}>{row.note || "无备注"}</div>
         </div>
-        <div className="max-w-[8.5rem] shrink-0 truncate text-right font-semibold tabular-nums">{money(row.amount, row.currency)}</div>
+        <div className="max-w-34 shrink-0 truncate text-right font-semibold tabular-nums">{money(row.amount, row.currency)}</div>
       </div>
-      <div className="mt-3 grid min-w-0 gap-1 text-xs text-[var(--color-text-secondary)]">
+      <div className="mt-3 grid min-w-0 gap-1 text-xs text-(--color-text-secondary)">
         <span className="truncate">账户：{props.accounts[row.accountId] ?? "-"}</span>
         <span className="truncate">分类：{props.categories[row.categoryId ?? ""] ?? "-"}</span>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-[var(--color-border)] pt-3">
+      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-(--color-border) pt-3">
         <Button className="min-w-0 px-2 text-xs" onClick={() => props.onEdit(row)}>编辑</Button>
         {row.kind === "expense" && <Button className="min-w-0 px-2 text-xs" onClick={() => props.onRefund(row)}>退款</Button>}
         <Button className="min-w-0 px-2 text-xs" variant="danger" onClick={() => props.onDelete(row)}>删除</Button>
       </div>
     </article>
   );
-}
+});
 
 function RowActions(props: {
   readonly row: Transaction;
@@ -164,8 +164,8 @@ function TablePager(props: {
   readonly setPageSize: (pageSize: number) => void;
 }) {
   return (
-    <div className="flex flex-col gap-3 border-t border-[var(--color-border)] p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-      <span className="text-[var(--color-text-secondary)]">共 {props.total} 条，第 {props.page} / {props.pages} 页</span>
+    <div className="flex flex-col gap-3 border-t border-(--color-border) p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <span className="text-(--color-text-secondary)">共 {props.total} 条，第 {props.page} / {props.pages} 页</span>
       <div className="flex flex-wrap items-center gap-2">
         <Select value={String(props.pageSize)} options={PAGE_SIZE_OPTIONS.map((value) => ({ value: String(value), label: `${value} / 页` }))} onChange={(value) => props.setPageSize(Number(value))} />
         <Button disabled={props.page <= 1} onClick={() => props.setPage(props.page - 1)}>上一页</Button>

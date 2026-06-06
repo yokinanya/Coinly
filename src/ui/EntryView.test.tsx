@@ -49,7 +49,8 @@ describe("EntryView", () => {
     parseText.mockResolvedValue(aiDraft(data, 38, "星巴克"));
 
     renderEntry(data, setData);
-    fireEvent.click(screen.getAllByText("解析文本")[0]);
+  fireEvent.change(screen.getByPlaceholderText("例如：星巴克 38 元，餐饮，今天下午"), { target: { value: "星巴克 38" } });
+  fireEvent.click(screen.getByText("解析文本"));
     await screen.findByText("星巴克");
     fireEvent.click(screen.getByText("编辑详情"));
     fireEvent.change(screen.getByDisplayValue("38"), { target: { value: "0" } });
@@ -65,7 +66,8 @@ describe("EntryView", () => {
     parseText.mockResolvedValue(aiDraft(data, 38, "星巴克"));
 
     renderEntry(data, setData);
-    fireEvent.click(screen.getAllByText("解析文本")[0]);
+  fireEvent.change(screen.getByPlaceholderText("例如：星巴克 38 元，餐饮，今天下午"), { target: { value: "星巴克 38" } });
+  fireEvent.click(screen.getByText("解析文本"));
     await screen.findByText("星巴克");
     fireEvent.click(screen.getByText("编辑详情"));
     fireEvent.change(screen.getByDisplayValue("38"), { target: { value: "45" } });

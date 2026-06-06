@@ -25,8 +25,8 @@ export function DataSecurityPanel(props: {
   };
   return (
     <>
-      <div className="space-y-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4">
-        <h3 className="text-sm font-medium text-[var(--color-text)]">数据加密已启用</h3>
+      <div className="space-y-3 rounded-md border border-(--color-border) bg-(--color-surface-muted) p-4">
+        <h3 className="text-sm font-medium text-(--color-text)">数据加密已启用</h3>
         <SecurityDescription remembered={remembered} remember={remember} clear={clear} openKeyChange={() => setChangingKey(true)} />
       </div>
       <KeyChangeModal data={props.data} token={props.token} open={changingKey} close={() => setChangingKey(false)} setRemembered={setRemembered} setMessage={props.setMessage} />
@@ -41,7 +41,7 @@ function SecurityDescription(props: {
   readonly openKeyChange: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+    <div className="flex flex-wrap items-center gap-2 text-sm text-(--color-text-secondary)">
       <span>本地账本、备份文件和同步数据都会加密保存。</span>
       <span>{props.remembered ? "当前浏览器会自动解锁。" : "当前浏览器需要输入口令。"}</span>
       <span className="flex flex-wrap gap-2">

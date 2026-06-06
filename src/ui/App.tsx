@@ -98,7 +98,7 @@ export function App() {
       );
     }
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--color-background)] px-4 text-center text-[var(--color-text-secondary)]">
+      <main className="grid min-h-screen place-items-center bg-(--color-background) px-4 text-center text-(--color-text-secondary)">
         <div className="max-w-md space-y-3">
           <StatusBar status={status} />
           {status.tone === "error" && <p className="text-sm">请刷新页面；如果仍失败，请确认浏览器允许本地存储，并关闭其它打开的 Coinly 页面后重试。</p>}
@@ -107,7 +107,7 @@ export function App() {
     );
   }
   return (
-    <div className="app-shell min-h-[100svh] md:min-h-screen">
+    <div className="app-shell min-h-svh md:min-h-screen">
       <div className="app-bg" aria-hidden="true" />
       <NavigationSidebar
         viewId={viewId}
