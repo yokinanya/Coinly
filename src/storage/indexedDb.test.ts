@@ -91,6 +91,50 @@ describe("indexedDb data validation", () => {
     expect(() => parseImportedData(JSON.stringify(data))).toThrow("引用不存在的信用卡账户");
   });
 
+  it("rejects imported statement billing amounts with missing currencies", () => {
+    const base = initialData();
+    const account = { ...base.accounts[0], id: "card", kind: "credit" as const, currency: "CNY" as const };
+    const data = {
+      ...base,
+      accounts: [account],
+      statements: [{
+        id: "statement",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        accountId: "card",
+        billingAmounts: [{ id: "billing", accountId: "card", amount: 120, currency: "AUD", note: "银行账单出账金额" }],
+        startAt: "2026-01-01T00:00:00.000Z",
+        endAt: "2026-01-31T23:59:59.000Z",
+        primaryCurrency: "CNY",
+        paid: false,
+      }],
+    };
+
+    expect(() => parseImportedData(JSON.stringify(data))).toThrow("银行出账金额 billing 引用不存在的币种 AUD");
+  });
+
+  it("rejects imported statement adjustments with unsupported card currencies", () => {
+    const base = initialData();
+    const account = { ...base.accounts[0], id: "card", kind: "credit" as const, currency: "CNY" as const };
+    const data = {
+      ...base,
+      accounts: [account],
+      statements: [{
+        id: "statement",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        accountId: "card",
+        adjustments: [{ id: "adjustment", accountId: "card", amount: 120, currency: "USD", note: "历史消费补差" }],
+        startAt: "2026-01-01T00:00:00.000Z",
+        endAt: "2026-01-31T23:59:59.000Z",
+        primaryCurrency: "CNY",
+        paid: false,
+      }],
+    };
+
+    expect(() => parseImportedData(JSON.stringify(data))).toThrow("补差项 adjustment 币种 USD 不受信用卡账户 card 支持");
+  });
+
   it("rejects imported recurring rules with missing accounts", () => {
     const data = {
       ...initialData(),

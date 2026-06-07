@@ -13,7 +13,7 @@ const NAV_ITEMS = [
   { id: "accounts", label: "账户", icon: Wallet },
   { id: "budget", label: "预算", icon: PieChart },
   { id: "stats", label: "统计", icon: BarChart3 },
-  { id: "analysis", label: "AI 分析", icon: Sparkles },
+  { id: "ai", label: "AI", icon: Sparkles },
   { id: "categories", label: "分类", icon: Tags },
   { id: "recurring", label: "订阅", icon: CalendarClock },
   { id: "settings", label: "设置", icon: Settings },
@@ -36,7 +36,7 @@ export function NavigationSidebar(props: {
   };
   return (
     <>
-      <MobileHeader openMenu={() => setMobileOpen(true)} goHome={() => select("home")} goEntry={() => select("entry")} />
+      <MobileHeader openMenu={() => setMobileOpen(true)} goHome={() => select("home")} goEntry={() => select("entry")} goAi={() => select("ai")} />
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-(--color-border) bg-(--color-surface) md:block">
         <SidebarContent items={items} viewId={props.viewId} theme={props.theme} syncDisabled={props.syncDisabled} syncing={props.syncing} onThemeChange={props.onThemeChange} onSync={props.onSync} onSelect={select} />
       </aside>
@@ -55,7 +55,7 @@ export function NavigationSidebar(props: {
   );
 }
 
-function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: () => void; readonly goEntry: () => void }) {
+function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: () => void; readonly goEntry: () => void; readonly goAi: () => void }) {
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-(--color-border) bg-(--color-surface) pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-(--safe-top) md:hidden">
       <button
@@ -68,15 +68,26 @@ function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: (
         <MenuIcon size={22} />
       </button>
       <button className="text-lg font-semibold leading-none text-(--color-text)" type="button" onClick={props.goHome}>Coinly</button>
-      <button
-        className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted)"
-        type="button"
-        aria-label="快速记账"
-        title="快速记账"
-        onClick={props.goEntry}
-      >
-        <PlusCircle size={22} />
-      </button>
+      <div className="mobile-header-actions">
+        <button
+          className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted)"
+          type="button"
+          aria-label="AI"
+          title="AI"
+          onClick={props.goAi}
+        >
+          <Sparkles size={22} />
+        </button>
+        <button
+          className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted)"
+          type="button"
+          aria-label="快速记账"
+          title="快速记账"
+          onClick={props.goEntry}
+        >
+          <PlusCircle size={22} />
+        </button>
+      </div>
     </header>
   );
 }

@@ -11,10 +11,16 @@ import {
 import type { Account, AppData, RecurringRule, Transaction } from "./types";
 
 describe("recurring rules", () => {
-  it("limits recurring currencies to the selected non-credit account currency", () => {
+  it("limits recurring currencies to the selected non-card account currency", () => {
     const account = accountFixture({ kind: "wechat", currency: "CNY", currencyCodes: ["CNY", "USD"] });
 
     expect(accountCurrencyOptions(account)).toEqual(["CNY"]);
+  });
+
+  it("uses configured debit card currencies", () => {
+    const account = accountFixture({ kind: "debit", currency: "CNY", currencyCodes: ["CNY", "USD"] });
+
+    expect(accountCurrencyOptions(account)).toEqual(["CNY", "USD"]);
   });
 
   it("uses configured credit card currencies", () => {

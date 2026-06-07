@@ -239,15 +239,15 @@ export function Select(props: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onC
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const rootRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
   const multi = Boolean(multiple || mode === "multiple");
   const values = selectValues(value);
   const selected = options.filter((option) => values.includes(option.value));
   const label = selected.length > 0 ? selected.map((option) => option.label).reduce<ReactNode[]>((nodes, node, index) => [...nodes, index > 0 ? "，" : "", node], []) : "请选择";
-  const openUp = useOpenUp(triggerRef, open, 280);
   const openSelect = (focusOption: boolean, index = initialSelectIndex(options, values)) => {
     setFocusedIndex(index);
     setOpen(true);
-    if (focusOption) focusSelectOption(rootRef, index);
+    if (focusOption) focusSelectOption(menuId, index);
   };
   const closeSelect = (focusTrigger: boolean) => {
     setOpen(false);
@@ -279,7 +279,7 @@ export function Select(props: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onC
         <span className="shrink-0 text-xs text-(--color-text-muted)">▾</span>
       </button>
       {open && (
-        <LocalFloatingMenu openUp={openUp} close={() => closeSelect(false)}>
+        <FloatingMenu triggerRef={triggerRef} close={() => closeSelect(false)}>
           <div className="ui-select-menu" role="listbox" aria-multiselectable={multi || undefined}>
             {options.map((option, index) => {
               const checked = values.includes(option.value);
@@ -290,11 +290,12 @@ export function Select(props: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onC
                   type="button"
                   role="option"
                   aria-selected={checked}
+                  data-select-owner={menuId}
                   data-select-option-index={index}
                   tabIndex={focusedIndex === index ? 0 : -1}
                   onClick={() => choose(option.value)}
                   onFocus={() => setFocusedIndex(index)}
-                  onKeyDown={(event) => handleSelectOptionKeyDown(event, { index, options, choose, closeSelect, rootRef, setFocusedIndex })}
+                  onKeyDown={(event) => handleSelectOptionKeyDown(event, { index, menuId, options, choose, closeSelect, setFocusedIndex })}
                 >
                   <span className="min-w-0 truncate">{option.label}</span>
                   {checked && <span className="shrink-0 text-(--color-accent)">✓</span>}
@@ -302,7 +303,7 @@ export function Select(props: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onC
               );
             })}
           </div>
-        </LocalFloatingMenu>
+        </FloatingMenu>
       )}
     </span>
   );
@@ -333,10 +334,10 @@ function handleSelectOptionKeyDown(
   event: ReactKeyboardEvent<HTMLButtonElement>,
   options: {
     readonly index: number;
+    readonly menuId: string;
     readonly options: readonly { readonly value: string }[];
     readonly choose: (value: string) => void;
     readonly closeSelect: (focusTrigger: boolean) => void;
-    readonly rootRef: RefObject<HTMLElement | null>;
     readonly setFocusedIndex: (index: number) => void;
   },
 ): void {
@@ -354,7 +355,7 @@ function handleSelectOptionKeyDown(
   if (nextIndex === options.index) return;
   event.preventDefault();
   options.setFocusedIndex(nextIndex);
-  focusSelectOption(options.rootRef, nextIndex);
+  focusSelectOption(options.menuId, nextIndex);
 }
 
 function nextSelectOptionIndex(key: string, index: number, total: number): number {
@@ -371,8 +372,8 @@ function initialSelectIndex(options: readonly { readonly value: string }[], valu
   return Math.max(0, selectedIndex);
 }
 
-function focusSelectOption(rootRef: RefObject<HTMLElement | null>, index: number): void {
-  window.requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(`[data-select-option-index="${index}"]`)?.focus({ preventScroll: true }));
+function focusSelectOption(menuId: string, index: number): void {
+  window.requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-select-owner="${menuId}"][data-select-option-index="${index}"]`)?.focus({ preventScroll: true }));
 }
 
 function selectValues(value: SelectHTMLAttributes<HTMLSelectElement>["value"]): readonly string[] {
@@ -384,56 +385,6 @@ function selectValues(value: SelectHTMLAttributes<HTMLSelectElement>["value"]): 
 
 function toggleSelectValue(values: readonly string[], value: string): readonly string[] {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
-}
-
-function LocalFloatingMenu(props: {
-  readonly openUp: boolean;
-  readonly close: () => void;
-  readonly children: ReactNode;
-}) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      if (menuRef.current?.parentElement?.contains(event.target as Node)) return;
-      props.close();
-    };
-    window.addEventListener("pointerdown", onPointerDown);
-    return () => window.removeEventListener("pointerdown", onPointerDown);
-  }, [props]);
-  return (
-    <div
-      ref={menuRef}
-      data-floating-menu
-      className={cn("ui-floating-menu ui-select-floating", props.openUp ? "ui-select-floating-up" : "ui-select-floating-down")}
-    >
-      {props.children}
-    </div>
-  );
-}
-
-function useOpenUp(triggerRef: RefObject<HTMLElement | null>, open: boolean, preferredHeight: number): boolean {
-  const [openUp, setOpenUp] = useState(false);
-  useEffect(() => {
-    if (!open) return undefined;
-    const update = () => setOpenUp(shouldOpenUp(triggerRef.current, preferredHeight));
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
-    return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-    };
-  }, [open, preferredHeight, triggerRef]);
-  return openUp;
-}
-
-function shouldOpenUp(trigger: HTMLElement | null, preferredHeight: number): boolean {
-  if (!trigger) return false;
-  const rect = trigger.getBoundingClientRect();
-  const gap = 6;
-  const below = window.innerHeight - rect.bottom - gap;
-  const above = rect.top - gap;
-  return below < preferredHeight && above > below;
 }
 
 export function FloatingMenu(props: {
@@ -612,8 +563,55 @@ function ListItemMeta(props: { readonly title?: ReactNode; readonly description?
 
 List.Item = Object.assign(ListItem, { Meta: ListItemMeta });
 
-export function Tabs(props: { readonly items?: readonly { readonly key: string; readonly label: ReactNode; readonly children: ReactNode }[]; readonly defaultActiveKey?: string }) {
-  const [active, setActive] = useState(props.defaultActiveKey ?? props.items?.[0]?.key);
-  const item = useMemo(() => props.items?.find((item) => item.key === active), [active, props.items]);
-  return <div><div className="toolbar mb-3 flex gap-1 p-1">{props.items?.map((item) => <Button key={item.key} variant={item.key === active ? "primary" : "ghost"} onClick={() => setActive(item.key)}>{item.label}</Button>)}</div>{item?.children}</div>;
+export function Tabs(props: {
+  readonly items?: readonly { readonly key: string; readonly label: ReactNode; readonly children: ReactNode }[];
+  readonly activeKey?: string;
+  readonly defaultActiveKey?: string;
+  readonly onChange?: (key: string) => void;
+}) {
+  const tabsId = useId();
+  const [uncontrolledActive, setUncontrolledActive] = useState(props.defaultActiveKey ?? props.items?.[0]?.key);
+  const preferredActive = props.activeKey ?? uncontrolledActive;
+  const activeItem = useMemo(() => props.items?.find((item) => item.key === preferredActive) ?? props.items?.[0], [preferredActive, props.items]);
+  const activeKey = activeItem?.key;
+  const select = (key: string) => {
+    setUncontrolledActive(key);
+    props.onChange?.(key);
+  };
+  return (
+    <div className="ui-tabs">
+      <div className="toolbar ui-tabs-list" role="tablist">
+        {props.items?.map((item) => {
+          const selected = item.key === activeKey;
+          return (
+            <Button
+              key={item.key}
+              id={tabId(tabsId, item.key)}
+              role="tab"
+              aria-selected={selected}
+              aria-controls={panelId(tabsId, item.key)}
+              tabIndex={selected ? 0 : -1}
+              variant={selected ? "primary" : "ghost"}
+              onClick={() => select(item.key)}
+            >
+              {item.label}
+            </Button>
+          );
+        })}
+      </div>
+      {activeItem && (
+        <div className="ui-tabs-panel" id={panelId(tabsId, activeItem.key)} role="tabpanel" aria-labelledby={tabId(tabsId, activeItem.key)}>
+          {activeItem.children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function tabId(rootId: string, key: string): string {
+  return `${rootId}-tab-${key}`;
+}
+
+function panelId(rootId: string, key: string): string {
+  return `${rootId}-panel-${key}`;
 }

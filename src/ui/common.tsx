@@ -28,9 +28,12 @@ interface FieldFeedbackProps {
 const WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"] as const;
 
 export function PageHeader(props: { readonly title: string; readonly actions?: ReactNode }) {
-  void props.title;
-  if (!props.actions) return null;
-  return <div className="flex flex-wrap justify-end gap-2">{props.actions}</div>;
+  return (
+    <header className="page-header">
+      <h1 className="page-title">{props.title}</h1>
+      {props.actions && <div className="page-actions">{props.actions}</div>}
+    </header>
+  );
 }
 
 export function SectionPanel(props: { readonly title?: string; readonly children: ReactNode }) {

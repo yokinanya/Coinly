@@ -1,11 +1,15 @@
 import type { AiSettings, AppData, TransactionDraft } from "../domain/types";
-import { analysisScopeLabel, buildAnalysisContext, buildDraftSystemPrompt, type AnalysisScope } from "./context";
+import { analysisScopeLabel, buildAnalysisContext, buildDraftSystemPrompt, buildQueryContext, buildSuggestionContext, type AnalysisScope } from "./context";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
+import type { CategoryTagSuggestion } from "./validation";
 
 export interface AiProvider {
   parseText(input: string, data: AppData): Promise<TransactionDraft>;
   parseImage(image: File, data: AppData): Promise<TransactionDraft>;
+  parseTextBatch(input: string, data: AppData): Promise<readonly TransactionDraft[]>;
+  suggestCategoryTag(transaction: TransactionDraft, data: AppData): Promise<CategoryTagSuggestion>;
   analyze(data: AppData, options?: { readonly scope?: AnalysisScope }): Promise<string>;
+  ask(question: string, data: AppData): Promise<string>;
 }
 
 export function buildAnalysisInput(data: AppData): string {
@@ -37,6 +41,13 @@ class OpenAiCompatibleProvider implements AiProvider {
     ]);
   }
 
+  async parseTextBatch(input: string, data: AppData): Promise<readonly TransactionDraft[]> {
+    return requestDrafts(this.settings, [
+      buildDraftSystemPrompt(data, { settings: this.settings, input, mode: "batch" }),
+      { role: "user", content: `解析这批记账文本，只返回 TransactionDraft JSON 数组：${input}` },
+    ]);
+  }
+
   async parseImage(image: File, data: AppData): Promise<TransactionDraft> {
     assertVisionSupported(this.settings);
     const dataUrl = await readAsDataUrl(image);
@@ -57,6 +68,26 @@ class OpenAiCompatibleProvider implements AiProvider {
     const response = await requestChat(this.settings, [
       { role: "system", content: analysisPrompt(analysisScopeLabel(scope)) },
       { role: "user", content: JSON.stringify(buildAnalysisContext(data, { settings: this.settings, analysisScope: scope })) },
+    ]);
+    return response.choices[0]?.message?.content ?? "";
+  }
+
+  async suggestCategoryTag(transaction: TransactionDraft, data: AppData): Promise<CategoryTagSuggestion> {
+    const response = await requestChat(this.settings, [
+      { role: "system", content: suggestionPrompt(buildSuggestionContext(data, { settings: this.settings })) },
+      { role: "user", content: JSON.stringify({ transaction }) },
+    ]);
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error("AI 未返回分类标签建议");
+    }
+    return parseSuggestionContent(content);
+  }
+
+  async ask(question: string, data: AppData): Promise<string> {
+    const response = await requestChat(this.settings, [
+      { role: "system", content: askPrompt() },
+      { role: "user", content: JSON.stringify(buildQueryContext(data, question, { settings: this.settings })) },
     ]);
     return response.choices[0]?.message?.content ?? "";
   }
@@ -100,6 +131,24 @@ function analysisPrompt(scopeLabel: string): string {
   ].join("\n");
 }
 
+function suggestionPrompt(context: unknown): string {
+  return [
+    "你是 Coinly 的分类和标签建议助手。只输出一个合法 JSON 对象，不要 Markdown，不要解释。",
+    "JSON 字段只能包含 categoryId、tagIds、confidence。categoryId 必须来自上下文分类 id；tagIds 必须是上下文标签 id 数组；confidence 是 0 到 1 的数字。",
+    "如果无法判断分类或标签，可以省略 categoryId 或输出空 tagIds。不要创建新分类或新标签。",
+    `上下文：${JSON.stringify(context)}`,
+  ].join("\n");
+}
+
+function askPrompt(): string {
+  return [
+    "你是 Coinly 的只读问账助手，只能基于用户提供的账本上下文回答，不要编造数据。",
+    "涉及金额时必须带币种代码或币种名称。没有足够数据时直接说明无法确定。",
+    "不要声称已经创建、修改或删除任何交易、分类、标签、预算或订阅。",
+    "输出简洁中文 Markdown；能给出可核对的分类、时间范围或交易备注时就写清楚。",
+  ].join("\n");
+}
+
 async function requestDraft(settings: AiSettings, messages: readonly unknown[]): Promise<TransactionDraft> {
   const response = await requestChat(settings, messages);
   const content = response.choices[0]?.message?.content;
@@ -107,6 +156,15 @@ async function requestDraft(settings: AiSettings, messages: readonly unknown[]):
     throw new Error("AI 未返回可解析内容");
   }
   return parseDraftContent(content);
+}
+
+async function requestDrafts(settings: AiSettings, messages: readonly unknown[]): Promise<readonly TransactionDraft[]> {
+  const response = await requestChat(settings, messages);
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("AI 未返回可解析内容");
+  }
+  return parseDraftArrayContent(content);
 }
 
 async function requestChat(settings: AiSettings, messages: readonly unknown[]): Promise<ChatResponse> {
@@ -154,6 +212,30 @@ export function parseDraftContent(content: string): TransactionDraft {
   }
 }
 
+export function parseDraftArrayContent(content: string): readonly TransactionDraft[] {
+  const json = extractJsonArray(content);
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (!Array.isArray(parsed)) {
+      throw new Error("不是 JSON 数组");
+    }
+    return parsed as TransactionDraft[];
+  } catch (error) {
+    const message = error instanceof Error ? `AI 返回的 JSON 数组无法解析：${error.message}` : "AI 返回的 JSON 数组无法解析";
+    throw new Error(message, { cause: error });
+  }
+}
+
+function parseSuggestionContent(content: string): CategoryTagSuggestion {
+  const json = extractJsonObject(content);
+  try {
+    return JSON.parse(json) as CategoryTagSuggestion;
+  } catch (error) {
+    const message = error instanceof Error ? `AI 返回的分类标签建议无法解析：${error.message}` : "AI 返回的分类标签建议无法解析";
+    throw new Error(message, { cause: error });
+  }
+}
+
 function extractJsonObject(content: string): string {
   const trimmed = content.trim();
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
@@ -162,6 +244,21 @@ function extractJsonObject(content: string): string {
   const object = balancedObject(trimmed);
   if (object) return object;
   throw new Error("AI 未返回 TransactionDraft JSON 对象");
+}
+
+function extractJsonArray(content: string): string {
+  const trimmed = content.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) return trimmed;
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]?.trim();
+  if (fenced?.startsWith("[") && fenced.endsWith("]")) return fenced;
+  const firstObject = trimmed.indexOf("{");
+  const firstArray = trimmed.indexOf("[");
+  if (firstArray < 0 || (firstObject >= 0 && firstObject < firstArray)) {
+    throw new Error("AI 未返回 TransactionDraft JSON 数组");
+  }
+  const array = balancedArray(trimmed);
+  if (array) return array;
+  throw new Error("AI 未返回 TransactionDraft JSON 数组");
 }
 
 function balancedObject(value: string): string | undefined {
@@ -187,6 +284,34 @@ function balancedObject(value: string): string | undefined {
     if (inString) continue;
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
+    if (depth === 0) return value.slice(start, index + 1);
+  }
+  return undefined;
+}
+
+function balancedArray(value: string): string | undefined {
+  const start = value.indexOf("[");
+  if (start < 0) return undefined;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = inString;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "[") depth += 1;
+    if (char === "]") depth -= 1;
     if (depth === 0) return value.slice(start, index + 1);
   }
   return undefined;

@@ -8,6 +8,18 @@ export interface CandidateValidation {
   readonly draft?: TransactionDraft;
 }
 
+export interface CategoryTagSuggestion {
+  readonly categoryId?: string;
+  readonly tagIds: readonly string[];
+  readonly confidence: number;
+}
+
+export interface SuggestionValidation {
+  readonly valid: boolean;
+  readonly errors: readonly string[];
+  readonly suggestion?: CategoryTagSuggestion;
+}
+
 export function validateTransactionDraft(value: unknown, data: AppData): CandidateValidation {
   const errors: string[] = [];
   const raw = value as Record<string, unknown>;
@@ -42,6 +54,37 @@ export function validateTransactionDraft(value: unknown, data: AppData): Candida
       tagIds,
       note: typeof raw.note === "string" ? raw.note : "",
       relatedAccountId: matchOptionalId(raw.relatedAccountId, data.accounts) ?? undefined,
+    },
+  };
+}
+
+export function validateTransactionDrafts(value: unknown, data: AppData): readonly CandidateValidation[] {
+  if (!Array.isArray(value)) {
+    return [{ valid: false, errors: ["AI 未返回交易数组"] }];
+  }
+  return value.map((item) => validateTransactionDraft(item, data));
+}
+
+export function validateCategoryTagSuggestion(value: unknown, data: AppData, draft: TransactionDraft): SuggestionValidation {
+  const errors: string[] = [];
+  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const categoryId = matchOptionalId(raw.categoryId ?? raw.category, data.categories);
+  const tagIds = normalizeTags(raw.tagIds ?? raw.tags, data);
+  if (categoryId === null) errors.push("AI 建议的分类无法匹配当前账本");
+  if (tagIds === null) errors.push("AI 建议的标签无法匹配当前账本");
+  if (typeof categoryId === "string" && !categoryMatchesDraft(data, draft, categoryId)) {
+    errors.push("AI 建议的分类方向与交易类型不匹配");
+  }
+  if (errors.length > 0 || categoryId === null || tagIds === null) {
+    return { valid: false, errors };
+  }
+  return {
+    valid: true,
+    errors: [],
+    suggestion: {
+      categoryId: categoryId ?? undefined,
+      tagIds,
+      confidence: normalizeConfidence(raw.confidence),
     },
   };
 }
@@ -87,4 +130,18 @@ function normalizeDate(value: unknown): string | undefined {
   if (dateOnly) return dateOnly;
   const date = dayjs(value);
   return date.isValid() ? date.format("YYYY-MM-DD") : undefined;
+}
+
+function normalizeConfidence(value: unknown): number {
+  const confidence = Number(value);
+  if (!Number.isFinite(confidence)) return 0.5;
+  return Math.min(1, Math.max(0, confidence));
+}
+
+function categoryMatchesDraft(data: AppData, draft: TransactionDraft, categoryId: string): boolean {
+  const category = data.categories.find((item) => item.id === categoryId);
+  if (!category) return false;
+  if (draft.kind === "income") return category.direction === "income";
+  if (draft.kind === "expense" || draft.kind === "refund") return category.direction === "expense";
+  return false;
 }

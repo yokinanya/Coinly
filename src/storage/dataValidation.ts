@@ -1,5 +1,7 @@
 import { DEFAULT_CURRENCIES, RECURRING_INTERVALS } from "../domain/constants";
 import { APP_SCHEMA_VERSION } from "../domain/factory";
+import { accountCurrencyOptions } from "../domain/recurring";
+import { statementAccountIds, statementAdjustments, statementBillingAmounts, statementSettlementTransactionIds } from "../domain/statements";
 import type { AppData, EntityBase } from "../domain/types";
 
 export interface DataSummary {
@@ -77,13 +79,25 @@ export function dataSummary(data: AppData): DataSummary {
 function migrateStatements(data: AppData): AppData["statements"] {
   return data.statements.map((statement) => {
     const transaction = data.transactions.find((item) => item.id === statement.settlementTransactionId);
-    if (!statement.paid || !transaction) return statement;
+    const settlementTransactionIds = statement.settlementTransactionIds ?? (statement.settlementTransactionId ? [statement.settlementTransactionId] : undefined);
+    const adjustments = statement.adjustments?.map((adjustment) => ({
+      ...adjustment,
+      note: adjustment.note ?? "历史消费补差",
+    }));
+    const billingAmounts = statement.billingAmounts?.map((amount) => ({
+      ...amount,
+      note: amount.note ?? "银行账单出账金额",
+    }));
+    if (!statement.paid || !transaction) return { ...statement, adjustments, billingAmounts, settlementTransactionIds };
     return {
       ...statement,
+      adjustments,
+      billingAmounts,
       settledAt: statement.settledAt ?? transaction.occurredAt,
       settlementAccountId: statement.settlementAccountId ?? transaction.relatedAccountId,
       settlementAmount: statement.settlementAmount ?? transaction.amount,
       settlementCurrency: statement.settlementCurrency ?? transaction.currency,
+      settlementTransactionIds,
     };
   });
 }
@@ -108,7 +122,9 @@ function isValidImportedData(data: AppData): boolean {
     && data.transactions.every(hasEntityBase)
     && data.recurringRules.every(hasEntityBase)
     && data.budgets.every(hasEntityBase)
-    && data.statements.every(hasEntityBase);
+    && data.statements.every((statement) => hasEntityBase(statement)
+      && (statement.adjustments === undefined || Array.isArray(statement.adjustments))
+      && (statement.billingAmounts === undefined || Array.isArray(statement.billingAmounts)));
 }
 
 function latestUpdatedAt(data: AppData): string {
@@ -146,6 +162,7 @@ function validationErrors(data: AppData): readonly string[] {
     ...duplicateEntityErrors(data),
     ...referenceErrors(data),
     ...transactionShapeErrors(data),
+    ...statementShapeErrors(data),
     ...recurringRuleShapeErrors(data),
   ];
 }
@@ -169,6 +186,27 @@ function transactionShapeErrors(data: AppData): readonly string[] {
     }
     return errors;
   });
+}
+
+function statementShapeErrors(data: AppData): readonly string[] {
+  return data.statements.flatMap((statement) => [
+    ...statementAdjustments(statement).flatMap((adjustment) => {
+    const errors: string[] = [];
+    if (!adjustment.id) errors.push(`账期 ${statement.id} 存在缺少 ID 的补差项`);
+    if (!adjustment.accountId) errors.push(`账期 ${statement.id} 补差项 ${adjustment.id} 缺少信用卡账户`);
+    if (!Number.isFinite(adjustment.amount) || adjustment.amount <= 0) errors.push(`账期 ${statement.id} 补差项 ${adjustment.id} 金额无效`);
+    if (!adjustment.currency) errors.push(`账期 ${statement.id} 补差项 ${adjustment.id} 缺少币种`);
+    return errors;
+  }),
+    ...statementBillingAmounts(statement).flatMap((amount) => {
+      const errors: string[] = [];
+      if (!amount.id) errors.push(`账期 ${statement.id} 存在缺少 ID 的银行出账金额`);
+      if (!amount.accountId) errors.push(`账期 ${statement.id} 银行出账金额 ${amount.id} 缺少信用卡账户`);
+      if (!Number.isFinite(amount.amount) || amount.amount <= 0) errors.push(`账期 ${statement.id} 银行出账金额 ${amount.id} 金额无效`);
+      if (!amount.currency) errors.push(`账期 ${statement.id} 银行出账金额 ${amount.id} 缺少币种`);
+      return errors;
+    }),
+  ]);
 }
 
 function recurringRuleShapeErrors(data: AppData): readonly string[] {
@@ -195,6 +233,7 @@ function allEntities(data: AppData): readonly EntityBase[] {
 function referenceSets(data: AppData) {
   return {
     accounts: new Set(data.accounts.map((item) => item.id)),
+    accountsById: new Map(data.accounts.map((item) => [item.id, item])),
     creditAccounts: new Set(data.accounts.filter((item) => item.kind === "credit").map((item) => item.id)),
     categories: new Set(data.categories.map((item) => item.id)),
     currencies: new Set(data.currencies),
@@ -234,10 +273,43 @@ function budgetReferenceErrors(data: AppData, refs: ReturnType<typeof referenceS
 
 function statementReferenceErrors(data: AppData, refs: ReturnType<typeof referenceSets>): readonly string[] {
   return data.statements.flatMap((statement) => [
-    ...missingCreditAccount(refs, statement.accountId, `账期 ${statement.id} 引用不存在的信用卡账户 ${statement.accountId}`),
+    ...statementAccountIds(statement).flatMap((accountId) => missingCreditAccount(refs, accountId, `账期 ${statement.id} 引用不存在的信用卡账户 ${accountId}`)),
     ...missingOptionalRef(refs.accounts, statement.settlementAccountId, `账期 ${statement.id} 引用不存在的结算账户 ${statement.settlementAccountId}`),
-    ...missingOptionalRef(refs.transactions, statement.settlementTransactionId, `账期 ${statement.id} 引用不存在的结算交易 ${statement.settlementTransactionId}`),
+    ...statementSettlementTransactionIds(statement).flatMap((transactionId) => missingRef(refs.transactions, transactionId, `账期 ${statement.id} 引用不存在的结算交易 ${transactionId}`)),
     ...currencyErrors(refs, `账期 ${statement.id}`, statement.primaryCurrency, statement.settlementCurrency),
+    ...statementAdjustmentReferenceErrors(statement, refs),
+    ...statementBillingAmountReferenceErrors(statement, refs),
+  ]);
+}
+
+function statementAdjustmentReferenceErrors(statement: AppData["statements"][number], refs: ReturnType<typeof referenceSets>): readonly string[] {
+  const accountIds = new Set(statementAccountIds(statement));
+  return statementAdjustments(statement).flatMap((adjustment) => [
+    ...missingCreditAccount(refs, adjustment.accountId, `账期 ${statement.id} 补差项 ${adjustment.id} 引用不存在的信用卡账户 ${adjustment.accountId}`),
+    ...(accountIds.has(adjustment.accountId) ? [] : [`账期 ${statement.id} 补差项 ${adjustment.id} 不属于当前账期`]),
+    ...currencyErrors(refs, `账期 ${statement.id} 补差项 ${adjustment.id}`, adjustment.currency),
+    ...unsupportedAdjustmentCurrencyErrors(statement.id, adjustment, refs),
+  ]);
+}
+
+function unsupportedAdjustmentCurrencyErrors(
+  statementId: string,
+  adjustment: ReturnType<typeof statementAdjustments>[number],
+  refs: ReturnType<typeof referenceSets>,
+): readonly string[] {
+  const account = refs.accountsById.get(adjustment.accountId);
+  if (!account || !refs.currencies.has(adjustment.currency)) return [];
+  return accountCurrencyOptions(account).includes(adjustment.currency)
+    ? []
+    : [`账期 ${statementId} 补差项 ${adjustment.id} 币种 ${adjustment.currency} 不受信用卡账户 ${adjustment.accountId} 支持`];
+}
+
+function statementBillingAmountReferenceErrors(statement: AppData["statements"][number], refs: ReturnType<typeof referenceSets>): readonly string[] {
+  const accountIds = new Set(statementAccountIds(statement));
+  return statementBillingAmounts(statement).flatMap((amount) => [
+    ...missingCreditAccount(refs, amount.accountId, `账期 ${statement.id} 银行出账金额 ${amount.id} 引用不存在的信用卡账户 ${amount.accountId}`),
+    ...(accountIds.has(amount.accountId) ? [] : [`账期 ${statement.id} 银行出账金额 ${amount.id} 不属于当前账期`]),
+    ...currencyErrors(refs, `账期 ${statement.id} 银行出账金额 ${amount.id}`, amount.currency),
   ]);
 }
 

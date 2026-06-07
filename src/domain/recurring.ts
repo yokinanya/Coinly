@@ -21,7 +21,7 @@ export function materializeDueRecurring(data: AppData, now = new Date()): AppDat
 }
 
 export function accountCurrencyOptions(account: Account): readonly string[] {
-  if (account.kind === "credit") {
+  if (account.kind === "credit" || account.kind === "debit") {
     return account.currencyCodes?.length ? account.currencyCodes : [account.currency];
   }
   return [account.currency];

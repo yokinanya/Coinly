@@ -76,8 +76,27 @@ export interface Budget extends EntityBase {
   readonly period: "monthly" | "yearly";
 }
 
+export interface CreditCardStatementAdjustment {
+  readonly id: string;
+  readonly accountId: string;
+  readonly amount: number;
+  readonly currency: CurrencyCode;
+  readonly note: string;
+}
+
+export interface CreditCardStatementBillingAmount {
+  readonly id: string;
+  readonly accountId: string;
+  readonly amount: number;
+  readonly currency: CurrencyCode;
+  readonly note: string;
+}
+
 export interface CreditCardStatement extends EntityBase {
   readonly accountId: string;
+  readonly accountIds?: readonly string[];
+  readonly adjustments?: readonly CreditCardStatementAdjustment[];
+  readonly billingAmounts?: readonly CreditCardStatementBillingAmount[];
   readonly startAt: string;
   readonly endAt: string;
   readonly primaryCurrency: CurrencyCode;
@@ -87,6 +106,7 @@ export interface CreditCardStatement extends EntityBase {
   readonly settledAt?: string;
   readonly settlementAccountId?: string;
   readonly settlementTransactionId?: string;
+  readonly settlementTransactionIds?: readonly string[];
 }
 
 export interface SyncTarget {

@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createId, initialData } from "./factory";
 import {
   budgetPeriodRange,
+  createCombinedStatementForAccounts,
   createStatementForAccount,
   deleteCurrency,
   deleteEntity,
   filterTransactions,
+  generateCombinedStatementForAccounts,
   spendingForBudgetPeriod,
   validateTransactionDraft,
 } from "./operations";
@@ -97,6 +99,33 @@ describe("operations", () => {
     expect(result.errors).toContain("交易币种与账户不匹配");
   });
 
+  it("allows transactions in configured debit card currencies", () => {
+    const base = initialData();
+    const account = { ...base.accounts[0], id: "debit", kind: "debit" as const, currency: "CNY" as const, currencyCodes: ["CNY", "USD"] };
+    const data = { ...base, accounts: [account] };
+    const valid = validateTransactionDraft(data, {
+      kind: "expense",
+      accountId: "debit",
+      amount: 10,
+      currency: "USD",
+      occurredAt: "2026-05-10T00:00:00.000Z",
+      tagIds: [],
+      note: "",
+    });
+    const invalid = validateTransactionDraft(data, {
+      kind: "expense",
+      accountId: "debit",
+      amount: 10,
+      currency: "JPY",
+      occurredAt: "2026-05-10T00:00:00.000Z",
+      tagIds: [],
+      note: "",
+    });
+
+    expect(valid.errors).toEqual([]);
+    expect(invalid.errors).toContain("交易币种与账户不匹配");
+  });
+
   it("rejects transfer target currencies unsupported by the target account", () => {
     const base = initialData();
     const target = { ...base.accounts[0], id: "target", currency: "HKD" };
@@ -141,6 +170,37 @@ describe("operations", () => {
     expect(() => createStatementForAccount(first, account, new Date("2026-05-10"))).toThrow("已存在");
   });
 
+  it("generates a combined statement for credit cards with the same statement day", () => {
+    const base = initialData();
+    const first = { ...base.accounts[0], id: "card-a", kind: "credit" as const, statementDay: 10 };
+    const second = { ...base.accounts[0], id: "card-b", kind: "credit" as const, statementDay: 10 };
+
+    const statement = generateCombinedStatementForAccounts([first, second], new Date("2026-05-10"));
+
+    expect(statement.accountId).toBe("card-a");
+    expect(statement.accountIds).toEqual(["card-a", "card-b"]);
+    expect(statement.startAt).toBe(new Date(2026, 3, 11).toISOString());
+    expect(statement.endAt).toBe(new Date(2026, 4, 10, 23, 59, 59).toISOString());
+  });
+
+  it("requires matching statement days for combined statements", () => {
+    const base = initialData();
+    const first = { ...base.accounts[0], id: "card-a", kind: "credit" as const, statementDay: 10 };
+    const second = { ...base.accounts[0], id: "card-b", kind: "credit" as const, statementDay: 20 };
+
+    expect(() => generateCombinedStatementForAccounts([first, second], new Date("2026-05-10"))).toThrow("账单日一致");
+  });
+
+  it("blocks combined statements that overlap an existing card statement", () => {
+    const base = initialData();
+    const first = { ...base.accounts[0], id: "card-a", kind: "credit" as const, statementDay: 10 };
+    const second = { ...base.accounts[0], id: "card-b", kind: "credit" as const, statementDay: 10 };
+    const data = { ...base, accounts: [first, second] };
+    const withSingle = createStatementForAccount(data, first, new Date("2026-05-10"));
+
+    expect(() => createCombinedStatementForAccounts(withSingle, [first, second], new Date("2026-05-10"))).toThrow("已存在");
+  });
+
   it("blocks deleting currencies bound to a credit card", () => {
     const base = initialData();
     const account = { ...base.accounts[0], kind: "credit" as const, currencyCodes: ["CNY", "USD"] };
@@ -164,6 +224,42 @@ describe("operations", () => {
     expect(() => deleteCurrency(base, "CNY")).toThrow("无法删除");
     expect(() => deleteCurrency(base, "USD")).toThrow("无法删除");
     expect(() => deleteCurrency({ ...base, statements: [statement] }, "HKD")).toThrow("无法删除");
+  });
+
+  it("blocks deleting currencies referenced by statement adjustments", () => {
+    const base = initialData();
+    const account = { ...base.accounts[0], id: "card", kind: "credit" as const, currency: "CNY" as const };
+    const statement = {
+      id: "statement",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+      accountId: "card",
+      adjustments: [{ id: "adjustment", accountId: "card", amount: 20, currency: "USD", note: "历史消费补差" }],
+      startAt: "2026-04-01T00:00:00.000Z",
+      endAt: "2026-04-30T23:59:59.000Z",
+      primaryCurrency: "CNY",
+      paid: false,
+    };
+
+    expect(() => deleteCurrency({ ...base, accounts: [account], statements: [statement] }, "USD")).toThrow("无法删除");
+  });
+
+  it("blocks deleting currencies referenced by bank billing amounts", () => {
+    const base = initialData();
+    const account = { ...base.accounts[0], id: "card", kind: "credit" as const, currency: "CNY" as const };
+    const statement = {
+      id: "statement",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+      accountId: "card",
+      billingAmounts: [{ id: "billing", accountId: "card", amount: 120, currency: "USD", note: "银行账单出账金额" }],
+      startAt: "2026-04-01T00:00:00.000Z",
+      endAt: "2026-04-30T23:59:59.000Z",
+      primaryCurrency: "CNY",
+      paid: false,
+    };
+
+    expect(() => deleteCurrency({ ...base, accounts: [account], statements: [statement] }, "USD")).toThrow("无法删除");
   });
 });
 

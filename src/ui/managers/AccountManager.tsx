@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ACCOUNT_KINDS } from "../../domain/constants";
 import { createBase, upsertEntity, validStatementDay } from "../../domain/operations";
+import { accountCurrencyOptions } from "../../domain/recurring";
 import type { Account } from "../../domain/types";
 import { ConfirmDialog, MultiSelectField } from "../common";
 import { ACCOUNT_KIND_LABELS } from "../labels";
@@ -81,14 +82,14 @@ function AccountFields(props: {
     <>
       <Field label="名称" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
       <SelectField label="类型" value={draft.kind} options={ACCOUNT_KINDS} labels={ACCOUNT_KIND_LABELS} onChange={(kind) => setDraft(changeKind(draft, kind as Account["kind"]))} />
-      {draft.kind !== "credit" && <SelectField label="币种" value={draft.currency} options={data.currencies} onChange={(currency) => setDraft({ ...draft, currency: currency as Account["currency"] })} />}
-      {draft.kind === "credit" && <CreditCurrencyField data={data} draft={draft} setDraft={setDraft} />}
+      {!isMultiCurrencyAccount(draft) && <SelectField label="币种" value={draft.currency} options={data.currencies} onChange={(currency) => setDraft({ ...draft, currency: currency as Account["currency"] })} />}
+      {isMultiCurrencyAccount(draft) && <AccountCurrencyField data={data} draft={draft} setDraft={setDraft} />}
       {draft.kind === "credit" && <StatementDateFields draft={draft} setDraft={setDraft} />}
     </>
   );
 }
 
-function CreditCurrencyField(props: {
+function AccountCurrencyField(props: {
   readonly data: ManagerProps["data"];
   readonly draft: Account;
   readonly setDraft: (account: Account) => void;
@@ -96,9 +97,9 @@ function CreditCurrencyField(props: {
   return (
     <MultiSelectField
       label="绑定币种"
-      values={creditCurrencies(props.draft)}
+      values={accountCurrencyOptions(props.draft)}
       options={props.data.currencies.map((currency) => ({ value: currency, label: currency }))}
-      onChange={(currencyCodes) => props.setDraft(changeCreditCurrencies(props.draft, currencyCodes))}
+      onChange={(currencyCodes) => props.setDraft(changeAccountCurrencies(props.draft, currencyCodes))}
     />
   );
 }
@@ -120,21 +121,24 @@ function defaultAccount(currency: Account["currency"]): Account {
 }
 
 function changeKind(account: Account, kind: Account["kind"]): Account {
-  if (kind === "credit") return { ...account, kind, currencyCodes: creditCurrencies(account) };
+  if (kind === "credit") return { ...account, kind, currencyCodes: accountCurrencyOptions(account) };
+  if (kind === "debit") {
+    return { id: account.id, createdAt: account.createdAt, updatedAt: account.updatedAt, name: account.name, currency: account.currency, kind, currencyCodes: accountCurrencyOptions(account) };
+  }
   return { id: account.id, createdAt: account.createdAt, updatedAt: account.updatedAt, name: account.name, currency: account.currency, kind };
 }
 
-function creditCurrencies(account: Account): readonly Account["currency"][] {
-  return account.currencyCodes?.length ? account.currencyCodes : [account.currency];
-}
-
-function changeCreditCurrencies(account: Account, currencyCodes: readonly string[]): Account {
+function changeAccountCurrencies(account: Account, currencyCodes: readonly string[]): Account {
   const [primaryCurrency] = currencyCodes;
   return { ...account, currency: primaryCurrency ?? account.currency, currencyCodes: currencyCodes as readonly Account["currency"][] };
 }
 
 function accountCurrencyText(account: Account): string {
-  return account.kind === "credit" ? creditCurrencies(account).join(" / ") : account.currency;
+  return isMultiCurrencyAccount(account) ? accountCurrencyOptions(account).join(" / ") : account.currency;
+}
+
+function isMultiCurrencyAccount(account: Account): boolean {
+  return account.kind === "credit" || account.kind === "debit";
 }
 
 function editAccount(account: Account, setDraft: (account: Account) => void, setOpen: (open: boolean) => void) {

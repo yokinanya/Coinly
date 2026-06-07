@@ -1,11 +1,15 @@
 import { useState } from "react";
 import type { AppData } from "../domain/types";
 import { ErrorBanner, PageHeader, SuccessBanner } from "./common";
+import { useAutoDismissText } from "./useAutoDismissMessage";
 import { CategoryManager } from "./managers/CategoryManager";
 import { TagManager } from "./managers/TagManager";
 
 export function CategoriesView(props: { readonly data: AppData; readonly setData: (data: AppData) => void }) {
   const [message, setMessage] = useState("");
+  const errorMessage = message.includes("失败") || message.includes("无法") ? message : "";
+  const successMessage = message && !errorMessage ? message : "";
+  useAutoDismissText(successMessage, () => setMessage(""));
   return (
     <section className="space-y-5">
       <PageHeader title="分类标签" />
@@ -17,8 +21,8 @@ export function CategoriesView(props: { readonly data: AppData; readonly setData
         <CategoryManager data={props.data} setData={props.setData} setMessage={setMessage} />
         <TagManager data={props.data} setData={props.setData} setMessage={setMessage} />
       </div>
-      <ErrorBanner message={message.includes("失败") || message.includes("无法") ? message : ""} />
-      <SuccessBanner message={message && !message.includes("失败") && !message.includes("无法") ? message : ""} />
+      <ErrorBanner message={errorMessage} />
+      <SuccessBanner message={successMessage} />
     </section>
   );
 }

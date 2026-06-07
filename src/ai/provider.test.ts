@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initialData } from "../domain/factory";
-import { buildAnalysisInput, chatCompletionsUrl, createAiProvider, parseDraftContent, systemPrompt } from "./provider";
+import { buildAnalysisInput, chatCompletionsUrl, createAiProvider, parseDraftArrayContent, parseDraftContent, systemPrompt } from "./provider";
 
 describe("buildAnalysisInput", () => {
   it("includes aggregated ledger context without full transactions", () => {
@@ -53,6 +53,19 @@ describe("parseDraftContent", () => {
 
   it("rejects output without a JSON object", () => {
     expect(() => parseDraftContent("无法解析")).toThrow("AI 未返回 TransactionDraft JSON 对象");
+  });
+});
+
+describe("parseDraftArrayContent", () => {
+  it("parses draft arrays from fenced model output", () => {
+    const drafts = parseDraftArrayContent(`结果如下：\n\`\`\`json\n${JSON.stringify([sampleDraft(), { ...sampleDraft(), amount: 38 }])}\n\`\`\``);
+
+    expect(drafts).toHaveLength(2);
+    expect(drafts[1]?.amount).toBe(38);
+  });
+
+  it("rejects output without a JSON array", () => {
+    expect(() => parseDraftArrayContent(JSON.stringify(sampleDraft()))).toThrow("JSON 数组");
   });
 });
 

@@ -3,6 +3,7 @@ import type { ReportEntry } from "./analytics";
 import { DAY_MAX, DAY_MIN } from "./constants";
 import { bumpVersion, createId, nowIso, touchEntity } from "./factory";
 import { accountCurrencyOptions } from "./recurring";
+import { statementAccountIds, statementAdjustments, statementBillingAmounts } from "./statements";
 import type {
   Account,
   AppData,
@@ -164,15 +165,35 @@ export function generateStatementForAccount(account: Account, monthDate = new Da
   return { ...createBase(), accountId: account.id, startAt: start.toISOString(), endAt: end.toISOString(), primaryCurrency: account.currency, paid: false };
 }
 
+export function generateCombinedStatementForAccounts(accounts: readonly Account[], monthDate = new Date()): CreditCardStatement {
+  if (accounts.length < 2) {
+    throw new Error("合并账单至少需要选择 2 张信用卡");
+  }
+  const [primary, ...rest] = accounts;
+  if (!primary || accounts.some((account) => account.kind !== "credit" || !account.statementDay)) {
+    throw new Error("只有配置账单日的信用卡账户可以生成合并账单");
+  }
+  if (rest.some((account) => account.statementDay !== primary.statementDay)) {
+    throw new Error("合并账单要求所选信用卡账单日一致");
+  }
+  return {
+    ...generateStatementForAccount(primary, monthDate),
+    accountIds: accounts.map((account) => account.id),
+  };
+}
+
 export function createStatementForAccount(data: AppData, account: Account, monthDate = new Date()): AppData {
   const statement = generateStatementForAccount(account, monthDate);
-  const exists = data.statements.some((item) => {
-    return item.accountId === statement.accountId
-      && item.startAt === statement.startAt
-      && item.endAt === statement.endAt;
-  });
-  if (exists) {
+  if (hasOverlappingStatement(data.statements, statement)) {
     throw new Error("该信用卡本周期账期已存在");
+  }
+  return upsertEntity(data, "statements", statement);
+}
+
+export function createCombinedStatementForAccounts(data: AppData, accounts: readonly Account[], monthDate = new Date()): AppData {
+  const statement = generateCombinedStatementForAccounts(accounts, monthDate);
+  if (hasOverlappingStatement(data.statements, statement)) {
+    throw new Error("所选信用卡本周期账期已存在");
   }
   return upsertEntity(data, "statements", statement);
 }
@@ -185,12 +206,24 @@ function assertCanDelete(data: AppData, key: CollectionKey, id: string): void {
 }
 
 function referenceCount(data: AppData, key: CollectionKey, id: string): number {
-  if (key === "accounts") return data.transactions.filter((item) => item.accountId === id || item.relatedAccountId === id).length;
+  if (key === "accounts") {
+    return data.transactions.filter((item) => item.accountId === id || item.relatedAccountId === id).length
+      + data.statements.filter((statement) => statementAccountIds(statement).includes(id) || statement.settlementAccountId === id).length;
+  }
   if (key === "categories") return data.transactions.filter((item) => item.categoryId === id).length;
   if (key === "tags") return data.transactions.filter((item) => item.tagIds.includes(id)).length;
   if (key === "budgets") return 0;
   if (key === "recurringRules") return data.transactions.filter((item) => item.sourceRecurringRuleId === id).length;
   return data.transactions.filter((item) => item.statementId === id || item.refundOfTransactionId === id).length;
+}
+
+function hasOverlappingStatement(statements: readonly CreditCardStatement[], statement: CreditCardStatement): boolean {
+  const accountIds = new Set(statementAccountIds(statement));
+  return statements.some((item) => {
+    return item.startAt === statement.startAt
+      && item.endAt === statement.endAt
+      && statementAccountIds(item).some((accountId) => accountIds.has(accountId));
+  });
 }
 
 function matchesFilter(transaction: Transaction, filter: TransactionFilter): boolean {
@@ -232,7 +265,7 @@ function currencyReferenceCount(data: AppData, currency: CurrencyCode): number {
   return data.accounts.filter((item) => accountUsesCurrency(item, currency)).length
     + data.transactions.filter((item) => item.currency === currency || item.targetCurrency === currency).length
     + data.budgets.filter((item) => item.currency === currency).length
-    + data.statements.filter((item) => item.primaryCurrency === currency).length
+    + data.statements.filter((item) => item.primaryCurrency === currency || item.settlementCurrency === currency || statementAdjustments(item).some((adjustment) => adjustment.currency === currency) || statementBillingAmounts(item).some((amount) => amount.currency === currency)).length
     + data.recurringRules.filter((item) => item.transaction.currency === currency || item.transaction.targetCurrency === currency).length;
 }
 

@@ -42,6 +42,38 @@ export interface AnalysisContext {
   readonly recentTransactions: readonly TransactionInsight[];
 }
 
+export interface SuggestionContext {
+  readonly contextMeta: ContextMeta;
+  readonly currentDate: string;
+  readonly transactionKinds: readonly string[];
+  readonly categories: readonly Pick<Category, "id" | "name" | "direction">[];
+  readonly tags: readonly Pick<Tag, "id" | "name">[];
+}
+
+export interface QueryContext {
+  readonly contextMeta: ContextMeta;
+  readonly currentDate: string;
+  readonly question: string;
+  readonly ledger: {
+    readonly transactionCount: number;
+    readonly accountCount: number;
+    readonly currencies: readonly string[];
+  };
+  readonly catalog: {
+    readonly accounts: readonly Pick<Account, "id" | "name" | "kind" | "currency" | "currencyCodes">[];
+    readonly categories: readonly Pick<Category, "id" | "name" | "direction">[];
+    readonly tags: readonly Pick<Tag, "id" | "name">[];
+  };
+  readonly currentMonth: {
+    readonly currencySummary: unknown;
+    readonly categorySummary: unknown;
+    readonly tagSummary: unknown;
+  };
+  readonly monthlyTrends: unknown;
+  readonly budgets: readonly BudgetInsight[];
+  readonly recentTransactions: readonly QueryTransactionInsight[];
+}
+
 export interface AnalysisPromptContext {
   readonly label: string;
 }
@@ -50,11 +82,13 @@ interface ContextOptions {
   readonly settings: AiSettings;
   readonly now?: Date;
   readonly input?: string;
+  readonly mode?: DraftMode;
   readonly trendMonths?: number;
   readonly analysisScope?: AnalysisScope;
 }
 
 export type AnalysisScope = "current-month" | "last-3-months" | "last-6-months" | "year-to-date";
+export type DraftMode = "single" | "batch";
 
 interface AnalysisPeriod {
   readonly label: string;
@@ -81,6 +115,10 @@ interface TransactionInsight {
   readonly note: string;
 }
 
+interface QueryTransactionInsight extends TransactionInsight {
+  readonly accountId: string;
+}
+
 const TOKEN_CHAR_RATIO = 4;
 const RECENT_TRANSACTION_LIMIT = 80;
 
@@ -103,6 +141,49 @@ export function buildAnalysisContext(data: AppData, options: ContextOptions): An
   return fitAnalysisContext(base, recentTransactions(data.transactions, period), budget);
 }
 
+export function buildSuggestionContext(data: AppData, options: ContextOptions): SuggestionContext {
+  const now = options.now ?? new Date();
+  const budget = resolveAiModelCapabilities(options.settings).contextBudget.inputTokens;
+  const base: SuggestionContext = {
+    contextMeta: { tokenBudget: 0, estimatedTokens: 0, truncated: false },
+    currentDate: now.toISOString(),
+    transactionKinds: TRANSACTION_KINDS,
+    categories: [],
+    tags: [],
+  };
+  return fitSuggestionContext(base, rankCategories(data), rankTags(data), budget);
+}
+
+export function buildQueryContext(data: AppData, question: string, options: ContextOptions): QueryContext {
+  const now = options.now ?? new Date();
+  const budget = resolveAiModelCapabilities(options.settings).contextBudget.inputTokens;
+  const report = buildReportIndex(data, { now, trendMonths: options.trendMonths ?? 6 });
+  const base: QueryContext = {
+    contextMeta: { tokenBudget: 0, estimatedTokens: 0, truncated: false },
+    currentDate: now.toISOString(),
+    question,
+    ledger: {
+      transactionCount: data.transactions.length,
+      accountCount: data.accounts.length,
+      currencies: data.currencies,
+    },
+    catalog: {
+      accounts: data.accounts.map(accountContext),
+      categories: [],
+      tags: [],
+    },
+    currentMonth: {
+      currencySummary: report.currencySummary,
+      categorySummary: report.categorySummary,
+      tagSummary: report.tagSummary,
+    },
+    monthlyTrends: report.monthlyTrends,
+    budgets: budgetInsights(data, report.currentMonthEntries),
+    recentTransactions: [],
+  };
+  return fitQueryContext(base, rankCategories(data), rankTags(data), queryTransactions(data.transactions), budget);
+}
+
 export function analysisScopeLabel(scope: AnalysisScope): string {
   if (scope === "last-3-months") return "近 3 个月";
   if (scope === "last-6-months") return "近 6 个月";
@@ -116,7 +197,7 @@ export function buildDraftSystemPrompt(
 ): { readonly role: "system"; readonly content: string } {
   return {
     role: "system",
-    content: draftInstructions(buildDraftContext(data, options)),
+    content: draftInstructions(buildDraftContext(data, options), options.mode ?? "single"),
   };
 }
 
@@ -176,10 +257,67 @@ function withDraftMeta(context: DraftContext, budget: number, categoryCount: num
   };
 }
 
-function draftInstructions(context: DraftContext): string {
+function fitSuggestionContext(
+  base: SuggestionContext,
+  categories: readonly SuggestionContext["categories"][number][],
+  tags: readonly SuggestionContext["tags"][number][],
+  budget: number,
+): SuggestionContext {
+  const selectedCategories = fitItems(base, categories, budget, (items) => ({ ...base, categories: items }));
+  const withCategories = { ...base, categories: selectedCategories };
+  const selectedTags = fitItems(withCategories, tags, budget, (items) => ({ ...withCategories, tags: items }));
+  const result = { ...withCategories, tags: selectedTags };
+  return {
+    ...result,
+    contextMeta: {
+      tokenBudget: budget,
+      estimatedTokens: estimateTokens(result),
+      truncated: result.categories.length < categories.length || result.tags.length < tags.length,
+      categoryCount: result.categories.length,
+      tagCount: result.tags.length,
+    },
+  };
+}
+
+function fitQueryContext(
+  base: QueryContext,
+  categories: readonly QueryContext["catalog"]["categories"][number][],
+  tags: readonly QueryContext["catalog"]["tags"][number][],
+  transactions: readonly QueryTransactionInsight[],
+  budget: number,
+): QueryContext {
+  const selectedCategories = fitItems(base, categories, budget, (items) => ({ ...base, catalog: { ...base.catalog, categories: items } }));
+  const withCategories = { ...base, catalog: { ...base.catalog, categories: selectedCategories } };
+  const selectedTags = fitItems(withCategories, tags, budget, (items) => ({ ...withCategories, catalog: { ...withCategories.catalog, tags: items } }));
+  const withTags = { ...withCategories, catalog: { ...withCategories.catalog, tags: selectedTags } };
+  const selectedTransactions = fitItems(withTags, transactions, budget, (items) => ({ ...withTags, recentTransactions: items }));
+  const result = { ...withTags, recentTransactions: selectedTransactions };
+  return {
+    ...result,
+    contextMeta: {
+      tokenBudget: budget,
+      estimatedTokens: estimateTokens(result),
+      truncated: result.catalog.categories.length < categories.length || result.catalog.tags.length < tags.length || result.recentTransactions.length < transactions.length,
+      categoryCount: result.catalog.categories.length,
+      tagCount: result.catalog.tags.length,
+      recentTransactionCount: result.recentTransactions.length,
+    },
+  };
+}
+
+function draftInstructions(context: DraftContext, mode: DraftMode): string {
+  const outputRules = mode === "batch"
+    ? [
+      "你是 Coinly 的批量记账解析器。只输出一个合法 JSON 数组，不要 Markdown，不要解释。",
+      "数组中的每个元素都必须符合 TransactionDraft：kind, accountId, amount, currency, occurredAt, tagIds, note 为必填字段。",
+      "只解析用户明确提供的交易，不要补造或推断不存在的交易。",
+    ]
+    : [
+      "你是 Coinly 的记账解析器。只输出一个合法 JSON 对象，不要 Markdown，不要解释。",
+      "JSON 必须符合 TransactionDraft：kind, accountId, amount, currency, occurredAt, tagIds, note 为必填字段。",
+    ];
   return [
-    "你是 Coinly 的记账解析器。只输出一个合法 JSON 对象，不要 Markdown，不要解释。",
-    "JSON 必须符合 TransactionDraft：kind, accountId, amount, currency, occurredAt, tagIds, note 为必填字段。",
+    ...outputRules,
     "kind 只能从这些枚举中选择。不要输出中文类型，不要发明新类型。",
     "常见映射：消费/付款/买东西=expense，工资/收款=income，退款/退货=refund，转账=transfer，信用卡还款=credit_payment。",
     "accountId 必须使用上下文账户 id；categoryId 必须使用候选分类 id；tagIds 必须是标签 id 数组。",
@@ -308,6 +446,12 @@ function transactionInsight(transaction: Transaction): TransactionInsight {
     tagIds: transaction.tagIds,
     note: transaction.note,
   };
+}
+
+function queryTransactions(transactions: readonly Transaction[]): readonly QueryTransactionInsight[] {
+  return [...transactions]
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+    .map((transaction) => ({ ...transactionInsight(transaction), accountId: transaction.accountId }));
 }
 
 function accountContext(account: Account): DraftContext["accounts"][number] {

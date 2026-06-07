@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { initialData } from "../domain/factory";
 import type { AppData } from "../domain/types";
-import { validateTransactionDraft } from "./validation";
+import { validateCategoryTagSuggestion, validateTransactionDraft, validateTransactionDrafts } from "./validation";
 
 describe("validateTransactionDraft", () => {
   it("normalizes common AI labels into local draft ids", () => {
@@ -61,6 +61,40 @@ describe("validateTransactionDraft", () => {
     expect(result.errors).toContain("AI 返回的账户无法匹配当前账本");
     expect(result.errors).toContain("AI 返回的标签无法匹配当前账本");
     expect(result.errors).toContain("AI 返回的日期无法解析");
+  });
+});
+
+describe("validateTransactionDrafts", () => {
+  it("validates a batch of AI candidates", () => {
+    const data = dataWithTag();
+    const results = validateTransactionDrafts([
+      { kind: "消费", account: "日常账户", amount: "38", currency: "CNY", category: "餐饮", tags: ["咖啡"], date: "2026-05-16", note: "星巴克" },
+      { kind: "unknown", account: "日常账户", amount: 10, currency: "CNY", date: "2026-05-16" },
+    ], data);
+
+    expect(results).toHaveLength(2);
+    expect(results[0]?.valid).toBe(true);
+    expect(results[1]?.valid).toBe(false);
+  });
+});
+
+describe("validateCategoryTagSuggestion", () => {
+  it("accepts matching category and tag suggestions", () => {
+    const data = dataWithTag();
+    const draft = { kind: "expense", accountId: data.accounts[0].id, amount: 38, currency: "CNY", occurredAt: "2026-05-16", tagIds: [], note: "星巴克" } as const;
+    const result = validateCategoryTagSuggestion({ category: "餐饮", tags: ["咖啡"], confidence: 1.2 }, data, draft);
+
+    expect(result.valid).toBe(true);
+    expect(result.suggestion).toMatchObject({ categoryId: data.categories[0].id, tagIds: [data.tags[0].id], confidence: 1 });
+  });
+
+  it("rejects category directions that do not match the draft kind", () => {
+    const data = dataWithTag();
+    const draft = { kind: "income", accountId: data.accounts[0].id, amount: 38, currency: "CNY", occurredAt: "2026-05-16", tagIds: [], note: "星巴克" } as const;
+    const result = validateCategoryTagSuggestion({ category: "餐饮", tags: [] }, data, draft);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("AI 建议的分类方向与交易类型不匹配");
   });
 });
 

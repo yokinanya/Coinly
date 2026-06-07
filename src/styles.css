@@ -184,6 +184,55 @@ textarea {
   color: var(--color-text);
 }
 
+.page-header {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.page-title {
+  min-width: 0;
+  color: var(--color-text);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  line-height: var(--leading-tight);
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.mobile-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.ui-tabs {
+  display: grid;
+  gap: 1rem;
+}
+
+.ui-tabs-list {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding: 0.25rem;
+}
+
+.ui-tabs-list [role="tab"] {
+  white-space: nowrap;
+}
+
+.ui-tabs-panel {
+  min-width: 0;
+}
+
 .row-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);

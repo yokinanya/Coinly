@@ -10,7 +10,7 @@ export const TRANSACTION_KIND_LABELS: Record<TransactionKind, string> = {
 
 export const ACCOUNT_KIND_LABELS: Record<AccountKind, string> = {
   cash: "现金",
-  debit: "储蓄卡",
+  debit: "借记卡",
   credit: "信用卡",
   alipay: "支付宝",
   wechat: "微信",
