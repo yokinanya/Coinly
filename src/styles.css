@@ -223,6 +223,12 @@ textarea {
   gap: 0.25rem;
   overflow-x: auto;
   padding: 0.25rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ui-tabs-list::-webkit-scrollbar {
+  display: none;
 }
 
 .ui-tabs-list [role="tab"] {
@@ -447,6 +453,13 @@ textarea {
   max-height: calc(88vh - 8rem);
   overflow: auto;
   padding: 1rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.dialog-body::-webkit-scrollbar,
+.drawer-body::-webkit-scrollbar {
+  display: none;
 }
 
 .drawer-body {
@@ -457,6 +470,12 @@ textarea {
   height: 100%;
   max-height: none;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.drawer-body-full::-webkit-scrollbar {
+  display: none;
 }
 
 .alert {
@@ -534,6 +553,12 @@ textarea {
   background: var(--color-surface);
   box-shadow: var(--shadow-popover);
   animation: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ui-floating-menu::-webkit-scrollbar {
+  display: none;
 }
 
 .ui-select-root {
@@ -852,6 +877,12 @@ textarea:focus-visible {
     flex-direction: column;
     max-height: min(70vh, 34rem);
     overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .metis-picker-dropdown .metis-picker-datetime-panel::-webkit-scrollbar {
+    display: none;
   }
 
   .metis-picker-dropdown .metis-picker-panel,

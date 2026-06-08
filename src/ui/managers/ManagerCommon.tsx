@@ -3,10 +3,11 @@ import type { InputHTMLAttributes, ReactNode } from "react";
 import type { AppData } from "../../domain/types";
 import { ConfirmDialog, SelectField as CommonSelectField, TextField } from "../common";
 import type { FormOption } from "../common";
-import { Button, Drawer } from "../components";
+import { Button, Drawer, Modal } from "../components";
 import { FadeIn } from "../motion";
 
 const DRAWER_WIDTH = 440;
+const DIALOG_WIDTH = 480;
 
 export type SetData = (data: AppData) => void;
 export type CollectionKey = "accounts" | "categories" | "tags" | "budgets" | "recurringRules" | "statements";
@@ -65,6 +66,27 @@ export function ManagerDrawer(props: {
     <Drawer open={props.open} title={props.title} width={DRAWER_WIDTH} footer={footer} onClose={props.onClose}>
       <div className={props.contentClassName ?? "space-y-5 py-1"}>{props.children}</div>
     </Drawer>
+  );
+}
+
+export function ManagerDialog(props: {
+  readonly open: boolean;
+  readonly title: string;
+  readonly children: ReactNode;
+  readonly contentClassName?: string;
+  readonly onClose: () => void;
+  readonly onSave: () => void;
+}) {
+  const footer = (
+    <div className="flex justify-end gap-2">
+      <Button onClick={props.onClose}>取消</Button>
+      <Button variant="primary" onClick={props.onSave}>保存</Button>
+    </div>
+  );
+  return (
+    <Modal open={props.open} title={props.title} width={DIALOG_WIDTH} footer={footer} onCancel={props.onClose} onOk={props.onSave}>
+      <div className={props.contentClassName ?? "space-y-5 py-1"}>{props.children}</div>
+    </Modal>
   );
 }
 

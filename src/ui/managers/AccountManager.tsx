@@ -7,7 +7,7 @@ import { ConfirmDialog, MultiSelectField } from "../common";
 import { ACCOUNT_KIND_LABELS } from "../labels";
 import { Button } from "../components";
 import { optionalNumber, removeEntity, requireName, runUpdate } from "./managerActions";
-import { Field, ManagerDrawer, SelectField } from "./ManagerCommon";
+import { Field, ManagerDialog, SelectField } from "./ManagerCommon";
 import type { ManagerProps } from "./ManagerCommon";
 
 export function AccountManager({ data, setData, setMessage }: ManagerProps) {
@@ -32,9 +32,9 @@ export function AccountManager({ data, setData, setMessage }: ManagerProps) {
         <Button variant="primary" onClick={() => editAccount(defaultAccount(defaultCurrency), setDraft, setOpen)}>新建</Button>
       </div>
       <AccountCards accounts={data.accounts} onEdit={(account) => editAccount(account, setDraft, setOpen)} onDelete={setPending} />
-      <ManagerDrawer open={open} title="账户" onClose={() => setOpen(false)} onSave={save}>
+      <ManagerDialog open={open} title="账户" onClose={() => setOpen(false)} onSave={save}>
         <AccountFields data={data} draft={draft} setDraft={setDraft} />
-      </ManagerDrawer>
+      </ManagerDialog>
       <ConfirmDialog open={Boolean(pending)} title="确认删除" description={pending ? `确认删除“${pending.name}”？有关联交易时会被阻止。` : ""} onCancel={() => setPending(undefined)} onConfirm={remove} />
     </section>
   );
