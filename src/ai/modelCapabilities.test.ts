@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AiSettings } from "../domain/types";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
+import { normalizeAiSettings, selectVisionModel } from "./settings";
 
 describe("resolveAiModelCapabilities", () => {
   it("uses model presets for large and medium context windows", () => {
@@ -40,6 +41,39 @@ describe("resolveAiModelCapabilities", () => {
 
     expect(capabilities.contextBudget).toMatchObject({ inputTokens: 32_000, source: "manual" });
     expect(capabilities.supportsVision).toBe(true);
+  });
+
+  it("resolves per-model settings independently", () => {
+    expect(resolveAiModelCapabilities({ model: "deepseek-chat" }).supportsVision).toBe(false);
+    expect(resolveAiModelCapabilities({ model: "deepseek-chat", supportsVision: true }).supportsVision).toBe(true);
+  });
+
+  it("normalizes legacy single-model settings into model slots", () => {
+    const normalized = normalizeAiSettings({
+      provider: "openai-compatible",
+      endpoint: "https://api.example/v1/chat/completions",
+      model: "legacy-text",
+      apiKey: "key",
+      contextTokenBudget: 32_000,
+      supportsVision: false,
+    });
+
+    expect(normalized.endpoint).toBe("https://api.example/v1");
+    expect(normalized.textModel).toMatchObject({ model: "legacy-text", contextTokenBudget: 32_000, supportsVision: false });
+    expect(selectVisionModel(normalized).model).not.toBe("legacy-text");
+  });
+
+  it("keeps explicitly empty model fields empty", () => {
+    const normalized = normalizeAiSettings({
+      provider: "openai-compatible",
+      endpoint: "https://api.example/v1",
+      apiKey: "key",
+      textModel: { model: "" },
+      visionModel: { model: "   " },
+    });
+
+    expect(normalized.textModel.model).toBe("");
+    expect(normalized.visionModel.model).toBe("");
   });
 
   it("uses conservative defaults for unknown models", () => {

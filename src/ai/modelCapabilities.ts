@@ -1,4 +1,5 @@
-import type { AiSettings } from "../domain/types";
+import type { AiModelSettings, AiSettings } from "../domain/types";
+import { selectTextModel } from "./settings";
 
 export interface AiContextBudget {
   readonly inputTokens: number;
@@ -56,15 +57,16 @@ const MODEL_PRESETS: readonly ModelPreset[] = [
   preset(/vision/i, STANDARD_CONTEXT_TOKENS, true),
 ] as const;
 
-export function resolveAiModelCapabilities(settings: AiSettings): AiModelCapabilities {
+export function resolveAiModelCapabilities(settings: AiSettings | AiModelSettings): AiModelCapabilities {
+  const modelSettings = normalizeCapabilityInput(settings);
   return {
-    contextBudget: resolveAiContextBudget(settings),
-    supportsVision: resolveVisionSupport(settings),
-    visionSource: visionSource(settings),
+    contextBudget: resolveAiContextBudget(modelSettings),
+    supportsVision: resolveVisionSupport(modelSettings),
+    visionSource: visionSource(modelSettings),
   };
 }
 
-export function resolveAiContextBudget(settings: AiSettings): AiContextBudget {
+export function resolveAiContextBudget(settings: AiModelSettings): AiContextBudget {
   if (settings.contextTokenBudget !== undefined) {
     return { inputTokens: normalizeManualBudget(settings.contextTokenBudget), source: "manual" };
   }
@@ -84,15 +86,22 @@ function presetContextTokens(model: string): number | undefined {
   return matchingPreset(model)?.contextTokens;
 }
 
-function resolveVisionSupport(settings: AiSettings): boolean {
+function resolveVisionSupport(settings: AiModelSettings): boolean {
   if (settings.supportsVision !== undefined) return settings.supportsVision;
   return matchingPreset(settings.model)?.supportsVision ?? false;
 }
 
-function visionSource(settings: AiSettings): AiModelCapabilities["visionSource"] {
+function visionSource(settings: AiModelSettings): AiModelCapabilities["visionSource"] {
   if (settings.supportsVision !== undefined) return "manual";
   if (matchingPreset(settings.model)) return "preset";
   return "default";
+}
+
+function normalizeCapabilityInput(settings: AiSettings | AiModelSettings): AiModelSettings {
+  if ("endpoint" in settings || "apiKey" in settings || "textModel" in settings) {
+    return selectTextModel(settings as AiSettings);
+  }
+  return settings;
 }
 
 function matchingPreset(model: string): ModelPreset | undefined {

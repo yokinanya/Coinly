@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { AnalysisScope } from "../ai/context";
 import { resolveAiModelCapabilities } from "../ai/modelCapabilities";
+import { selectVisionModel } from "../ai/settings";
 import { createAiProvider } from "../ai/provider";
 import { validateCategoryTagSuggestion, validateTransactionDraft, validateTransactionDrafts, type CategoryTagSuggestion } from "../ai/validation";
 import { createId, createTransaction } from "../domain/factory";
@@ -81,9 +82,8 @@ function AiEntryPanel(props: AiHubViewProps) {
   const [saving, setSaving] = useState(false);
   const pending = state.tone === "loading";
   const canParseText = text.trim().length > 0;
-  const supportsVision = props.data.aiSettings ? resolveAiModelCapabilities(props.data.aiSettings).supportsVision : false;
-  const parseSingle = () => runEntryAi({ task: () => createAiProvider(props.data.aiSettings).parseText(text, props.data), data: props.data, setRows, setState });
-  const parseBatch = () => runEntryAiBatch({ task: () => createAiProvider(props.data.aiSettings).parseTextBatch(text, props.data), data: props.data, setRows, setState });
+  const supportsVision = props.data.aiSettings ? resolveAiModelCapabilities(selectVisionModel(props.data.aiSettings)).supportsVision : false;
+  const parseText = () => runEntryAiBatch({ task: () => createAiProvider(props.data.aiSettings).parseTextBatch(text, props.data), data: props.data, setRows, setState });
   const parseImage = (file: File) => {
     runEntryAi({ task: () => createAiProvider(props.data.aiSettings).parseImage(file, props.data), data: props.data, setRows, setState });
     return Upload.LIST_IGNORE;
@@ -92,19 +92,15 @@ function AiEntryPanel(props: AiHubViewProps) {
   return (
     <div className="space-y-4">
       <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold text-(--color-text)">AI 记账</h2>
-          <div className="flex flex-wrap gap-2">
-            <Button loading={pending} disabled={pending || !canParseText} onClick={parseSingle}><Sparkles size={16} />解析单笔</Button>
-            <Button loading={pending} disabled={pending || !canParseText} onClick={parseBatch}><Sparkles size={16} />批量解析</Button>
-            <Upload accept="image/*" beforeUpload={parseImage} disabled={!supportsVision} maxCount={1} showUploadList={false}>
-              <Button loading={pending} disabled={pending || !supportsVision} icon={<Camera size={16} />}>解析图片</Button>
-            </Upload>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <Button loading={pending} disabled={pending || !canParseText} onClick={parseText}><Sparkles size={16} />解析文本</Button>
+          <Upload accept="image/*" beforeUpload={parseImage} disabled={!supportsVision} maxCount={1} showUploadList={false}>
+            <Button loading={pending} disabled={pending || !supportsVision} icon={<Camera size={16} />}>解析图片</Button>
+          </Upload>
         </div>
         <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} value={text} onChange={(value) => setText(String(value))} placeholder="星巴克 38 元，餐饮，今天下午" />
         <AiMessage state={state} />
-        {!supportsVision && <p className="text-xs text-(--color-text-secondary)">当前模型未开启图片能力。</p>}
+        {!supportsVision && <p className="text-xs text-(--color-text-secondary)">图片模型未开启图片能力。</p>}
       </section>
       {rows.length > 0 && <CandidateList data={props.data} rows={rows} saving={saving} setRows={setRows} onSave={saveSelected} />}
     </div>
@@ -292,7 +288,7 @@ function runEntryAiBatch(options: {
   readonly setRows: (rows: readonly CandidateRow[]) => void;
   readonly setState: (state: { readonly tone: AiTone; readonly text: string }) => void;
 }) {
-  options.setState({ tone: "loading", text: "AI 正在批量解析输入" });
+  options.setState({ tone: "loading", text: "AI 正在解析文本" });
   Promise.resolve()
     .then(options.task)
     .then((candidates) => {
@@ -301,7 +297,7 @@ function runEntryAiBatch(options: {
       const validCount = rows.filter((row) => row.draft && row.errors.length === 0).length;
       options.setState({ tone: validCount > 0 ? "success" : "error", text: `已解析 ${validCount} 笔有效候选` });
     })
-    .catch((error: unknown) => options.setState({ tone: "error", text: error instanceof Error ? error.message : "AI 批量解析失败" }));
+    .catch((error: unknown) => options.setState({ tone: "error", text: error instanceof Error ? error.message : "AI 文本解析失败" }));
 }
 
 function saveCandidateRows(options: AiHubViewProps & {

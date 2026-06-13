@@ -140,11 +140,19 @@ export interface SyncSettings {
   readonly lastSyncedAt?: string;
 }
 
+export interface AiModelSettings {
+  readonly model: string;
+  readonly contextTokenBudget?: number;
+  readonly supportsVision?: boolean;
+}
+
 export interface AiSettings {
   readonly provider: "openai-compatible";
   readonly endpoint: string;
-  readonly model: string;
   readonly apiKey: string;
+  readonly textModel?: AiModelSettings;
+  readonly visionModel?: AiModelSettings;
+  readonly model?: string;
   readonly contextTokenBudget?: number;
   readonly supportsVision?: boolean;
 }

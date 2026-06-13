@@ -1,6 +1,6 @@
 import { TRANSACTION_KINDS } from "../domain/constants";
 import { buildReportIndex, summarizeByCategory, summarizeByCurrency, summarizeByTag, type ReportEntry } from "../domain/analytics";
-import type { Account, AiSettings, AppData, Budget, Category, Tag, Transaction } from "../domain/types";
+import type { Account, AiModelSettings, AppData, Budget, Category, Tag, Transaction } from "../domain/types";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
 
 export interface ContextMeta {
@@ -79,7 +79,7 @@ export interface AnalysisPromptContext {
 }
 
 interface ContextOptions {
-  readonly settings: AiSettings;
+  readonly settings: AiModelSettings;
   readonly now?: Date;
   readonly input?: string;
   readonly mode?: DraftMode;

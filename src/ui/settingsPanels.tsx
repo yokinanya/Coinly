@@ -1,6 +1,7 @@
 import { addCurrency, deleteCurrency } from "../domain/operations";
-import type { AiSettings, AppData, ThemeMode } from "../domain/types";
+import type { AiModelSettings, AiSettings, AppData, ThemeMode } from "../domain/types";
 import { resolveAiModelCapabilities } from "../ai/modelCapabilities";
+import { defaultAiSettings, normalizeAiSettings } from "../ai/settings";
 import { SelectField, TextField } from "./common";
 import type { FormOption } from "./common";
 import { DataVaultPanel } from "./DataVaultPanel";
@@ -20,8 +21,9 @@ export function ThemePanel(props: { readonly theme: ThemeMode; readonly onChange
 
 export function AiSettingsPanel(props: { readonly settings?: AiSettings; readonly onChange: (settings: AiSettings) => void }) {
   const settings = normalizeAiSettings(props.settings ?? defaultAiSettings());
-  const update = (patch: Partial<AiSettings>) => props.onChange({ ...settings, ...patch });
-  const capabilities = resolveAiModelCapabilities(settings);
+  const update = (patch: Partial<AiSettings>) => props.onChange(normalizeAiSettings({ ...settings, ...patch }));
+  const updateTextModel = (patch: Partial<AiModelSettings>) => updateModelSlot("textModel", patch, settings, update);
+  const updateVisionModel = (patch: Partial<AiModelSettings>) => updateModelSlot("visionModel", patch, settings, update);
   return (
     <SettingsSection title="AI Provider">
       <div className="grid w-full max-w-5xl gap-4 lg:grid-cols-[repeat(2,minmax(18rem,1fr))]">
@@ -34,21 +36,34 @@ export function AiSettingsPanel(props: { readonly settings?: AiSettings; readonl
         <div className="lg:col-span-2">
           <TextField label="Base URL" value={settings.endpoint} onChange={(endpoint) => update({ endpoint })} />
         </div>
-        <TextField label="模型" value={settings.model} onChange={(model) => updateModel(model, update)} />
         <TextField label="API Key" type="password" value={settings.apiKey} onChange={(apiKey) => update({ apiKey })} />
-        <TextField
-          label={`上下文预算 Token（当前 ${capabilities.contextBudget.inputTokens}）`}
-          value={settings.contextTokenBudget ?? ""}
-          placeholder="留空使用模型预设"
-          onChange={(value) => update(contextBudgetPatch(value))}
-        />
-        <VisionSwitch settings={settings} update={update} />
+        <ModelSettingsFields title="文本模型" settings={settings.textModel} update={updateTextModel} />
+        <ModelSettingsFields title="图片模型" settings={settings.visionModel} update={updateVisionModel} />
       </div>
     </SettingsSection>
   );
 }
 
-function VisionSwitch(props: { readonly settings: AiSettings; readonly update: (patch: Partial<AiSettings>) => void }) {
+function ModelSettingsFields(props: { readonly title: string; readonly settings: AiModelSettings; readonly update: (patch: Partial<AiModelSettings>) => void }) {
+  const capabilities = resolveAiModelCapabilities(props.settings);
+  return (
+    <div className="space-y-4 rounded-md border border-(--color-border) p-4 lg:col-span-2">
+      <h3 className="text-sm font-semibold text-(--color-text)">{props.title}</h3>
+      <div className="grid gap-4 lg:grid-cols-[repeat(2,minmax(18rem,1fr))]">
+        <TextField label="模型" value={props.settings.model} onChange={(model) => props.update({ model, supportsVision: undefined })} />
+        <TextField
+          label={`上下文预算 Token（当前 ${capabilities.contextBudget.inputTokens}）`}
+          value={props.settings.contextTokenBudget ?? ""}
+          placeholder="留空使用模型预设"
+          onChange={(value) => props.update(contextBudgetPatch(value))}
+        />
+        <VisionSwitch settings={props.settings} update={props.update} />
+      </div>
+    </div>
+  );
+}
+
+function VisionSwitch(props: { readonly settings: AiModelSettings; readonly update: (patch: Partial<AiModelSettings>) => void }) {
   const capabilities = resolveAiModelCapabilities(props.settings);
   return (
     <label className="block">
@@ -147,25 +162,23 @@ function updateAiProvider(provider: string, settings: AiSettings, update: (patch
   update(preset ? { endpoint: preset.endpoint } : { endpoint: settings.endpoint });
 }
 
-function updateModel(model: string, update: (patch: Partial<AiSettings>) => void) {
-  update({ model, supportsVision: undefined });
-}
-
-function defaultAiSettings(): AiSettings {
-  return { provider: "openai-compatible", endpoint: "https://api.openai.com/v1", model: "gpt-4.1-mini", apiKey: "" };
-}
-
-function normalizeAiSettings(settings: AiSettings): AiSettings {
-  return { ...settings, endpoint: settings.endpoint.replace(/\/chat\/completions\/?$/, "") };
-}
-
 function normalizeEndpoint(endpoint: string): string {
   return endpoint.trim().replace(/\/+$/, "");
 }
 
-function contextBudgetPatch(value: string): Partial<AiSettings> {
+function contextBudgetPatch(value: string): Partial<AiModelSettings> {
   const trimmed = value.trim();
   if (!trimmed) return { contextTokenBudget: undefined };
   const contextTokenBudget = Number(trimmed);
   return { contextTokenBudget };
+}
+
+function updateModelSlot(
+  slot: "textModel" | "visionModel",
+  patch: Partial<AiModelSettings>,
+  settings: AiSettings,
+  update: (patch: Partial<AiSettings>) => void,
+) {
+  const current = slot === "textModel" ? settings.textModel : settings.visionModel;
+  update({ [slot]: { ...current, ...patch } });
 }

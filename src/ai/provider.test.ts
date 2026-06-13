@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { initialData } from "../domain/factory";
 import { buildAnalysisInput, chatCompletionsUrl, createAiProvider, parseDraftArrayContent, parseDraftContent, systemPrompt } from "./provider";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("buildAnalysisInput", () => {
   it("includes aggregated ledger context without full transactions", () => {
@@ -26,15 +30,65 @@ describe("systemPrompt", () => {
 });
 
 describe("parseImage", () => {
-  it("rejects image parsing when the configured model does not support vision", async () => {
+  it("rejects image parsing when the configured vision model does not support vision", async () => {
     const provider = createAiProvider({
       provider: "openai-compatible",
       endpoint: "https://api.openai.com/v1",
-      model: "deepseek-chat",
       apiKey: "key",
+      textModel: { model: "gpt-4o-mini" },
+      visionModel: { model: "deepseek-chat" },
     });
 
     await expect(provider.parseImage(new File([""], "receipt.png"), initialData())).rejects.toThrow("不支持图片解析");
+  });
+
+  it("routes text and image parsing to different configured models", async () => {
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(sampleDraft()) } }] }), { status: 200 });
+    }));
+    vi.stubGlobal("FileReader", class {
+      result = "data:image/png;base64,AA==";
+      error: DOMException | null = null;
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      readAsDataURL() {
+        this.onload?.();
+      }
+    });
+    const provider = createAiProvider({
+      provider: "openai-compatible",
+      endpoint: "https://api.example/v1",
+      apiKey: "key",
+      textModel: { model: "text-model" },
+      visionModel: { model: "vision-model", supportsVision: true },
+    });
+
+    await provider.parseText("午餐 12.5", initialData());
+    await provider.parseImage(new File(["image"], "receipt.png"), initialData());
+
+    expect(requests.map((body) => JSON.parse(body) as { model: string })).toEqual([
+      expect.objectContaining({ model: "text-model" }),
+      expect.objectContaining({ model: "vision-model" }),
+    ]);
+  });
+});
+
+describe("parseText", () => {
+  it("rejects empty configured model names before sending a request", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const provider = createAiProvider({
+      provider: "openai-compatible",
+      endpoint: "https://api.openai.com/v1",
+      apiKey: "key",
+      textModel: { model: "" },
+      visionModel: { model: "gpt-4o-mini" },
+    });
+
+    await expect(provider.parseText("午餐 12.5", initialData())).rejects.toThrow("配置 AI 模型");
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

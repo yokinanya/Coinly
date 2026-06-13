@@ -3,6 +3,7 @@ import { APP_SCHEMA_VERSION } from "../domain/factory";
 import { accountCurrencyOptions } from "../domain/recurring";
 import { statementAccountIds, statementAdjustments, statementBillingAmounts, statementSettlementTransactionIds } from "../domain/statements";
 import type { AppData, EntityBase } from "../domain/types";
+import { normalizeAiSettings } from "../ai/settings";
 
 export interface DataSummary {
   readonly schemaVersion: number;
@@ -51,6 +52,7 @@ export function migrateData(data: AppData): AppData {
     updatedAt: data.updatedAt ?? latestUpdatedAt(data),
     currencies: Array.isArray(data.currencies) ? data.currencies : DEFAULT_CURRENCIES,
     statements: migrateStatements(data),
+    aiSettings: data.aiSettings ? normalizeAiSettings(data.aiSettings) : undefined,
     uiSettings: data.uiSettings ?? { theme: "system" },
   };
 }

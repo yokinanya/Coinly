@@ -1,6 +1,7 @@
-import type { AiSettings, AppData, TransactionDraft } from "../domain/types";
+import type { AiModelSettings, AiSettings, AppData, TransactionDraft } from "../domain/types";
 import { analysisScopeLabel, buildAnalysisContext, buildDraftSystemPrompt, buildQueryContext, buildSuggestionContext, type AnalysisScope } from "./context";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
+import { defaultAiSettings, normalizeAiSettings, selectTextModel, selectVisionModel, type NormalizedAiSettings } from "./settings";
 import type { CategoryTagSuggestion } from "./validation";
 
 export interface AiProvider {
@@ -13,7 +14,8 @@ export interface AiProvider {
 }
 
 export function buildAnalysisInput(data: AppData): string {
-  return JSON.stringify(buildAnalysisContext(data, { settings: requireAiSettings(data.aiSettings) }));
+  const settings = requireAiSettings(data.aiSettings);
+  return JSON.stringify(buildAnalysisContext(data, { settings: selectTextModel(settings) }));
 }
 
 interface ChatResponse {
@@ -28,31 +30,34 @@ export function createAiProvider(settings?: AiSettings): AiProvider {
   if (!settings?.apiKey) {
     throw new Error("请先在设置中配置 AI API Key");
   }
-  return new OpenAiCompatibleProvider(settings);
+  return new OpenAiCompatibleProvider(normalizeAiSettings(settings));
 }
 
 class OpenAiCompatibleProvider implements AiProvider {
-  constructor(private readonly settings: AiSettings) {}
+  constructor(private readonly settings: NormalizedAiSettings) {}
 
   async parseText(input: string, data: AppData): Promise<TransactionDraft> {
-    return requestDraft(this.settings, [
-      buildDraftSystemPrompt(data, { settings: this.settings, input }),
+    const model = this.settings.textModel;
+    return requestDraft(this.settings, model, [
+      buildDraftSystemPrompt(data, { settings: model, input }),
       { role: "user", content: `解析这条记账文本，只返回 TransactionDraft JSON：${input}` },
     ]);
   }
 
   async parseTextBatch(input: string, data: AppData): Promise<readonly TransactionDraft[]> {
-    return requestDrafts(this.settings, [
-      buildDraftSystemPrompt(data, { settings: this.settings, input, mode: "batch" }),
+    const model = this.settings.textModel;
+    return requestDrafts(this.settings, model, [
+      buildDraftSystemPrompt(data, { settings: model, input, mode: "batch" }),
       { role: "user", content: `解析这批记账文本，只返回 TransactionDraft JSON 数组：${input}` },
     ]);
   }
 
   async parseImage(image: File, data: AppData): Promise<TransactionDraft> {
-    assertVisionSupported(this.settings);
+    const model = this.settings.visionModel;
+    assertVisionSupported(model);
     const dataUrl = await readAsDataUrl(image);
-    return requestDraft(this.settings, [
-      buildDraftSystemPrompt(data, { settings: this.settings }),
+    return requestDraft(this.settings, model, [
+      buildDraftSystemPrompt(data, { settings: model }),
       {
         role: "user",
         content: [
@@ -65,16 +70,18 @@ class OpenAiCompatibleProvider implements AiProvider {
 
   async analyze(data: AppData, options: { readonly scope?: AnalysisScope } = {}): Promise<string> {
     const scope = options.scope ?? "current-month";
-    const response = await requestChat(this.settings, [
+    const model = this.settings.textModel;
+    const response = await requestChat(this.settings, model, [
       { role: "system", content: analysisPrompt(analysisScopeLabel(scope)) },
-      { role: "user", content: JSON.stringify(buildAnalysisContext(data, { settings: this.settings, analysisScope: scope })) },
+      { role: "user", content: JSON.stringify(buildAnalysisContext(data, { settings: model, analysisScope: scope })) },
     ]);
     return response.choices[0]?.message?.content ?? "";
   }
 
   async suggestCategoryTag(transaction: TransactionDraft, data: AppData): Promise<CategoryTagSuggestion> {
-    const response = await requestChat(this.settings, [
-      { role: "system", content: suggestionPrompt(buildSuggestionContext(data, { settings: this.settings })) },
+    const model = this.settings.textModel;
+    const response = await requestChat(this.settings, model, [
+      { role: "system", content: suggestionPrompt(buildSuggestionContext(data, { settings: model })) },
       { role: "user", content: JSON.stringify({ transaction }) },
     ]);
     const content = response.choices[0]?.message?.content;
@@ -85,30 +92,27 @@ class OpenAiCompatibleProvider implements AiProvider {
   }
 
   async ask(question: string, data: AppData): Promise<string> {
-    const response = await requestChat(this.settings, [
+    const model = this.settings.textModel;
+    const response = await requestChat(this.settings, model, [
       { role: "system", content: askPrompt() },
-      { role: "user", content: JSON.stringify(buildQueryContext(data, question, { settings: this.settings })) },
+      { role: "user", content: JSON.stringify(buildQueryContext(data, question, { settings: model })) },
     ]);
     return response.choices[0]?.message?.content ?? "";
   }
 }
 
 export function systemPrompt(data: AppData): Record<string, string> {
-  return buildDraftSystemPrompt(data, { settings: requireAiSettings(data.aiSettings) });
+  const settings = requireAiSettings(data.aiSettings);
+  return buildDraftSystemPrompt(data, { settings: selectTextModel(settings) });
 }
 
-function requireAiSettings(settings?: AiSettings): AiSettings {
-  return settings ?? {
-    provider: "openai-compatible",
-    endpoint: "https://api.openai.com/v1",
-    model: "gpt-4.1-mini",
-    apiKey: "",
-  };
+function requireAiSettings(settings?: AiSettings): NormalizedAiSettings {
+  return normalizeAiSettings(settings ?? defaultAiSettings());
 }
 
-function assertVisionSupported(settings: AiSettings): void {
+function assertVisionSupported(settings: AiModelSettings): void {
   if (!resolveAiModelCapabilities(settings).supportsVision) {
-    throw new Error("当前 AI 模型不支持图片解析，请在设置中更换多模态模型或手动开启图片能力");
+    throw new Error("当前 AI 图片模型不支持图片解析，请在设置中更换多模态模型或手动开启图片能力");
   }
 }
 
@@ -149,8 +153,8 @@ function askPrompt(): string {
   ].join("\n");
 }
 
-async function requestDraft(settings: AiSettings, messages: readonly unknown[]): Promise<TransactionDraft> {
-  const response = await requestChat(settings, messages);
+async function requestDraft(settings: NormalizedAiSettings, model: AiModelSettings, messages: readonly unknown[]): Promise<TransactionDraft> {
+  const response = await requestChat(settings, model, messages);
   const content = response.choices[0]?.message?.content;
   if (!content) {
     throw new Error("AI 未返回可解析内容");
@@ -158,8 +162,8 @@ async function requestDraft(settings: AiSettings, messages: readonly unknown[]):
   return parseDraftContent(content);
 }
 
-async function requestDrafts(settings: AiSettings, messages: readonly unknown[]): Promise<readonly TransactionDraft[]> {
-  const response = await requestChat(settings, messages);
+async function requestDrafts(settings: NormalizedAiSettings, model: AiModelSettings, messages: readonly unknown[]): Promise<readonly TransactionDraft[]> {
+  const response = await requestChat(settings, model, messages);
   const content = response.choices[0]?.message?.content;
   if (!content) {
     throw new Error("AI 未返回可解析内容");
@@ -167,14 +171,17 @@ async function requestDrafts(settings: AiSettings, messages: readonly unknown[])
   return parseDraftArrayContent(content);
 }
 
-async function requestChat(settings: AiSettings, messages: readonly unknown[]): Promise<ChatResponse> {
+async function requestChat(settings: NormalizedAiSettings, model: AiModelSettings, messages: readonly unknown[]): Promise<ChatResponse> {
+  if (!model.model.trim()) {
+    throw new Error("请先在设置中配置 AI 模型");
+  }
   const response = await fetch(chatCompletionsUrl(settings.endpoint), {
     method: "POST",
     headers: {
       authorization: `Bearer ${settings.apiKey}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ model: settings.model, messages }),
+    body: JSON.stringify({ model: model.model, messages }),
   });
   if (!response.ok) {
     throw new Error(`AI 调用失败：${response.status} ${response.statusText}`);

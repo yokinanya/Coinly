@@ -33,14 +33,14 @@ describe("AiHubView", () => {
     cleanup();
   });
 
-  it("saves selected batch candidates", async () => {
+  it("saves selected text parse candidates", async () => {
     const data = initialData();
     const setData = vi.fn();
     parseTextBatch.mockResolvedValue([aiDraft(data, 38, "星巴克")]);
 
     renderHub(data, setData);
     fireEvent.change(screen.getByPlaceholderText("星巴克 38 元，餐饮，今天下午"), { target: { value: "星巴克 38" } });
-    fireEvent.click(screen.getByText("批量解析"));
+    fireEvent.click(screen.getByText("解析文本"));
 
     expect(await screen.findByText("识别结果")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /保存选中 1/ }));
@@ -49,6 +49,8 @@ describe("AiHubView", () => {
     const saved = setData.mock.calls[0][0] as AppData;
     expect(saved.transactions).toHaveLength(1);
     expect(saved.transactions[0]?.amount).toBe(38);
+    expect(parseTextBatch).toHaveBeenCalledTimes(1);
+    expect(parseText).not.toHaveBeenCalled();
   });
 
   it("runs AI analysis inside the hub", async () => {
@@ -93,7 +95,20 @@ describe("AiHubView", () => {
 });
 
 function renderHub(data: AppData, setData: (data: AppData) => void) {
-  return render(<AiHubView data={data} setData={setData} />);
+  return render(<AiHubView data={withAiSettings(data)} setData={setData} />);
+}
+
+function withAiSettings(data: AppData): AppData {
+  return {
+    ...data,
+    aiSettings: {
+      provider: "openai-compatible",
+      endpoint: "https://api.example/v1",
+      apiKey: "key",
+      textModel: { model: "text-model" },
+      visionModel: { model: "vision-model", supportsVision: true },
+    },
+  };
 }
 
 function aiDraft(data: AppData, amount: number, note: string): TransactionDraft {
