@@ -85,12 +85,47 @@ describe("AiHubView", () => {
     fireEvent.click(screen.getByRole("tab", { name: "智能补全" }));
     fireEvent.click(screen.getByText("生成建议"));
 
-    expect(await screen.findByText("餐饮 · 不改标签")).toBeTruthy();
+    expect(await screen.findByText("分类：未分类 → 餐饮")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /应用选中 1/ }));
 
     await waitFor(() => expect(setData).toHaveBeenCalledTimes(1));
     const saved = setData.mock.calls[0][0] as AppData;
     expect(saved.transactions[0]?.categoryId).toBe(data.categories[0].id);
+  });
+
+  it("only suggests transactions from the last 30 days", async () => {
+    const data = dataWithSuggestionWindowTransactions();
+    suggestCategoryTag.mockResolvedValue({ categoryId: data.categories[0].id, tagIds: [], confidence: 0.8 });
+
+    renderHub(data, vi.fn());
+    fireEvent.click(screen.getByRole("tab", { name: "智能补全" }));
+    fireEvent.click(screen.getByText("生成建议"));
+
+    await screen.findByText("分类：未分类 → 餐饮");
+    expect(suggestCategoryTag).toHaveBeenCalledTimes(1);
+    expect(screen.getByText((content) => content.includes("已生成") && content.includes("1 条建议") && content.includes("1 / 1 页"))).toBeTruthy();
+  });
+
+  it("does not return unchanged suggestions to the frontend", async () => {
+    const data = dataWithTaggedTransaction();
+    suggestCategoryTag.mockResolvedValue({ categoryId: undefined, tagIds: [], confidence: 0.8 });
+
+    renderHub(data, vi.fn());
+    fireEvent.click(screen.getByRole("tab", { name: "智能补全" }));
+    fireEvent.click(screen.getByText("生成建议"));
+
+    expect(await screen.findByText("已生成 0 条建议")).toBeTruthy();
+    expect(screen.queryByText(/分类：|标签：/)).toBeNull();
+  });
+
+  it("hides suggestion pager before generation", () => {
+    renderHub(dataWithUncategorizedTransaction(), vi.fn());
+    fireEvent.click(screen.getByRole("tab", { name: "智能补全" }));
+
+    expect(screen.queryByText(/已生成 \d+ 条建议/)).toBeNull();
+    expect(screen.queryByText("10 / 页")).toBeNull();
+    expect(screen.queryByText("上一页")).toBeNull();
+    expect(screen.queryByText("下一页")).toBeNull();
   });
 });
 
@@ -135,6 +170,49 @@ function dataWithUncategorizedTransaction(): AppData {
     amount: 38,
     currency: "CNY",
     occurredAt: "2026-05-29",
+    tagIds: [],
+    note: "午餐",
+  } satisfies Transaction;
+  return { ...data, transactions: [transaction] };
+}
+
+function dataWithSuggestionWindowTransactions(): AppData {
+  const data = initialData();
+  const recent = {
+    id: "transaction-recent",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:00.000Z",
+    kind: "expense",
+    accountId: data.accounts[0]?.id ?? "",
+    amount: 38,
+    currency: "CNY",
+    occurredAt: "2026-06-10",
+    tagIds: [],
+    note: "午餐",
+  } satisfies Transaction;
+  const old = {
+    ...recent,
+    id: "transaction-old",
+    createdAt: "2026-04-01T00:00:00.000Z",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+    occurredAt: "2026-04-01",
+    note: "旧交易",
+  } satisfies Transaction;
+  return { ...data, transactions: [recent, old] };
+}
+
+function dataWithTaggedTransaction(): AppData {
+  const data = initialData();
+  const transaction = {
+    id: "transaction-tagged",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:00.000Z",
+    kind: "expense",
+    accountId: data.accounts[0]?.id ?? "",
+    amount: 38,
+    currency: "CNY",
+    occurredAt: "2026-06-10",
+    categoryId: data.categories[0]?.id,
     tagIds: [],
     note: "午餐",
   } satisfies Transaction;

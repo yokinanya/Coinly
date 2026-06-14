@@ -48,6 +48,34 @@ describe("summarizeByCurrency", () => {
     ]);
   });
 
+  it("reduces budget spending with configured offset income categories", () => {
+    const base = initialData();
+    const expenseCategory = { ...base.categories[0], id: "food", direction: "expense" as const };
+    const offsetCategory = { ...base.categories.find((category) => category.direction === "income"), id: "resale", name: "出售二手", direction: "income" as const };
+    const data = {
+      ...base,
+      categories: [expenseCategory, offsetCategory].filter(Boolean) as AppData["categories"],
+      budgets: [{
+        id: "food-budget",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        name: "餐饮预算",
+        amount: 500,
+        currency: "CNY",
+        categoryIds: ["food"],
+        tagIds: [],
+        offsetCategoryIds: ["resale"],
+        period: "monthly",
+      }],
+      transactions: [
+        { ...makeTransaction(base.accounts[0].id, 30, "CNY", "expense"), categoryId: "food" },
+        { ...makeTransaction(base.accounts[0].id, 10, "CNY", "income"), categoryId: "resale" },
+      ],
+    };
+
+    expect(spendingForBudget(data, "food-budget")).toBe(20);
+  });
+
   it("builds monthly trends by original currency without exchange", () => {
     const base = initialData();
     const data = {

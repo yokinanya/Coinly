@@ -138,7 +138,7 @@ export function spendingForBudgetPeriodEntries(
   const [start, end] = budgetPeriodRange(budget, now);
   return entries
     .filter((entry) => matchesBudgetPeriod(entry, budget, start, end))
-    .reduce((total, entry) => total + entry.amount, 0);
+    .reduce((total, entry) => total + budgetEntryAmount(entry, budget), 0);
 }
 
 export function foreignBudgetSpending(data: AppData, budget: Budget): readonly ReportEntry[] {
@@ -253,8 +253,16 @@ function matchesBudgetScope(
   budget: Budget,
 ): boolean {
   const categoryOk = budget.categoryIds.length === 0 || budget.categoryIds.includes(transaction.categoryId ?? "");
+  const offsetCategoryOk = (budget.offsetCategoryIds?.length ?? 0) > 0 && (budget.offsetCategoryIds ?? []).includes(transaction.categoryId ?? "");
   const tagOk = budget.tagIds.length === 0 || budget.tagIds.some((tagId) => transaction.tagIds.includes(tagId));
-  return transaction.kind === "expense" && categoryOk && tagOk;
+  return ((transaction.kind === "expense" && categoryOk) || (transaction.kind === "income" && offsetCategoryOk)) && tagOk;
+}
+
+function budgetEntryAmount(transaction: Transaction | ReportEntry, budget: Budget): number {
+  if (transaction.kind === "income" && (budget.offsetCategoryIds ?? []).includes(transaction.categoryId ?? "")) {
+    return -transaction.amount;
+  }
+  return transaction.amount;
 }
 
 export function validStatementDay(value?: number): boolean {

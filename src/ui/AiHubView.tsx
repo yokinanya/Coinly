@@ -1,4 +1,5 @@
 import { Camera, Check, Pencil, Sparkles, Tags } from "lucide-react";
+import dayjs from "dayjs";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { AnalysisScope } from "../ai/context";
@@ -11,7 +12,7 @@ import { upsertTransaction, validateTransactionDraft as validateDraft } from "..
 import type { AppData, Transaction, TransactionDraft } from "../domain/types";
 import { ErrorBanner, MessageBanner, PageHeader, SelectField } from "./common";
 import type { FormOption, StatusMessage } from "./common";
-import { Button, Checkbox, Input, Tabs, Upload } from "./components";
+import { Button, Checkbox, Input, Select, Tabs, Upload } from "./components";
 import { money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
 import { MarkdownContent } from "./MarkdownContent";
@@ -29,6 +30,7 @@ const ANALYSIS_SCOPE_OPTIONS: readonly FormOption[] = [
 ];
 
 const ASK_EXAMPLES = ["这个月餐饮花了多少？", "近 3 个月支出最高的分类是什么？", "有哪些交易缺少分类？"] as const;
+const SUGGESTION_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
 interface AiHubViewProps {
   readonly data: AppData;
@@ -205,12 +207,18 @@ function AiAskPanel(props: { readonly data: AppData }) {
 }
 
 function AiSuggestionPanel(props: AiHubViewProps) {
-  const targets = useMemo(() => props.data.transactions.filter(needsSuggestion).slice(0, 20), [props.data.transactions]);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [page, setPage] = useState(1);
+  const targets = useMemo(() => recentSuggestionTargets(props.data.transactions), [props.data.transactions]);
   const [rows, setRows] = useState<readonly SuggestionRow[]>([]);
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, pages);
+  const pageRows = useMemo(() => currentPageRows(rows, currentPage, pageSize), [currentPage, pageSize, rows]);
   const [state, setState] = useState<{ readonly tone: AiTone; readonly text: string }>({ tone: "idle", text: "" });
   const [saving, setSaving] = useState(false);
   const pending = state.tone === "loading";
-  const generate = () => generateSuggestions({ ...props, targets, setRows, setState });
+  const hasGeneratedRows = rows.length > 0;
+  const generate = () => generateSuggestions({ ...props, targets, setRows, setState, setPage });
   const apply = () => applySuggestions({ ...props, rows, saving, setRows, setSaving, setState });
   const selected = rows.filter((row) => row.selected && row.suggestion).length;
   return (
@@ -223,10 +231,21 @@ function AiSuggestionPanel(props: AiHubViewProps) {
         </div>
       </div>
       <AiMessage state={state} />
-      {targets.length === 0 && <p className="text-sm text-(--color-text-secondary)">暂无需要补全的交易。</p>}
+      {targets.length === 0 && <p className="text-sm text-(--color-text-secondary)">最近 30 天暂无需要补全的交易。</p>}
       {rows.length > 0 && (
         <div className="space-y-3">
-          {rows.map((row) => <SuggestionCard key={row.transaction.id} data={props.data} row={row} rows={rows} setRows={setRows} />)}
+          {pageRows.map((row) => <SuggestionCard key={row.transaction.id} data={props.data} row={row} rows={rows} setRows={setRows} />)}
+          <div className="flex items-center justify-between gap-3 border-t border-(--color-border) pt-3 text-sm whitespace-nowrap">
+            <span className="text-(--color-text-secondary)">已生成 {rows.length} 条建议，当前第 {currentPage} / {pages} 页</span>
+            <div className="flex items-center gap-2">
+              <Select value={String(pageSize)} options={SUGGESTION_PAGE_SIZE_OPTIONS.map((value) => ({ value: String(value), label: `${value} / 页` }))} onChange={(value) => {
+                setPageSize(Number(value));
+                setPage(1);
+              }} />
+              <Button disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一页</Button>
+              <Button disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>下一页</Button>
+            </div>
+          </div>
         </div>
       )}
     </section>
@@ -236,6 +255,7 @@ function AiSuggestionPanel(props: AiHubViewProps) {
 function SuggestionCard(props: { readonly data: AppData; readonly row: SuggestionRow; readonly rows: readonly SuggestionRow[]; readonly setRows: (rows: readonly SuggestionRow[]) => void }) {
   const row = props.row;
   const replace = (next: SuggestionRow) => props.setRows(props.rows.map((item) => item.transaction.id === row.transaction.id ? next : item));
+  const changeText = row.suggestion ? suggestionChangeText(props.data, row.transaction, row.suggestion) : undefined;
   return (
     <div className="row-card flex items-start justify-between gap-3 p-3">
       <div className="flex min-w-0 items-start gap-3">
@@ -243,7 +263,7 @@ function SuggestionCard(props: { readonly data: AppData; readonly row: Suggestio
         <div className="min-w-0 text-sm">
           <div className="font-semibold text-(--color-text)">{row.transaction.note || TRANSACTION_KIND_LABELS[row.transaction.kind]}</div>
           <div className="mt-1 text-(--color-text-secondary)">{money(row.transaction.amount, row.transaction.currency)} · {new Date(row.transaction.occurredAt).toLocaleDateString("zh-CN")}</div>
-          {row.suggestion && <div className="mt-2 text-(--color-text-secondary)">{suggestionText(props.data, row.suggestion)}</div>}
+          {row.suggestion && <div className="mt-2 text-(--color-text-secondary)">{changeText ?? suggestionText(props.data, row.suggestion)}</div>}
           {row.errors.length > 0 && <div className="mt-2 text-(--color-error)">{row.errors.join("；")}</div>}
         </div>
       </div>
@@ -333,6 +353,7 @@ function saveCandidateRows(options: AiHubViewProps & {
 function generateSuggestions(options: AiHubViewProps & {
   readonly targets: readonly Transaction[];
   readonly setRows: (rows: readonly SuggestionRow[]) => void;
+  readonly setPage: (page: number) => void;
   readonly setState: (state: { readonly tone: AiTone; readonly text: string }) => void;
 }) {
   options.setState({ tone: "loading", text: "AI 正在生成分类和标签建议" });
@@ -342,14 +363,17 @@ function generateSuggestions(options: AiHubViewProps & {
       return Promise.all(options.targets.map((transaction) => provider.suggestCategoryTag(draftFromTransaction(transaction), options.data)
         .then((value) => {
           const result = validateCategoryTagSuggestion(value, options.data, draftFromTransaction(transaction));
-          const hasSuggestion = Boolean(result.suggestion?.categoryId || result.suggestion?.tagIds.length);
-          return { transaction, selected: hasSuggestion, suggestion: result.suggestion, errors: result.errors } satisfies SuggestionRow;
+          const hasSuggestion = Boolean(result.suggestion && suggestionHasChange(transaction, result.suggestion));
+          if (!hasSuggestion) return undefined;
+          return { transaction, selected: true, suggestion: result.suggestion, errors: result.errors } satisfies SuggestionRow;
         })
         .catch((error: unknown) => ({ transaction, selected: false, suggestion: undefined, errors: [error instanceof Error ? error.message : "AI 建议失败"] } satisfies SuggestionRow))));
     })
     .then((rows) => {
-      options.setRows(rows);
-      options.setState({ tone: "success", text: `已生成 ${rows.filter((row) => row.suggestion).length} 条建议` });
+      const nextRows = rows.filter((row): row is SuggestionRow => Boolean(row));
+      options.setRows(nextRows);
+      options.setPage(1);
+      options.setState({ tone: "success", text: `已生成 ${nextRows.length} 条建议` });
     })
     .catch((error: unknown) => options.setState({ tone: "error", text: error instanceof Error ? error.message : "AI 建议失败" }));
 }
@@ -392,8 +416,53 @@ function needsSuggestion(transaction: Transaction): boolean {
   return (transaction.kind === "income" || transaction.kind === "expense" || transaction.kind === "refund") && (!transaction.categoryId || transaction.tagIds.length === 0);
 }
 
+function recentSuggestionTargets(transactions: readonly Transaction[]): readonly Transaction[] {
+  const threshold = dayjs().subtract(30, "day").format("YYYY-MM-DD");
+  return [...transactions]
+    .filter((transaction) => needsSuggestion(transaction) && transaction.occurredAt >= threshold)
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.createdAt.localeCompare(left.createdAt));
+}
+
 function suggestionText(data: AppData, suggestion: CategoryTagSuggestion): string {
   const category = data.categories.find((item) => item.id === suggestion.categoryId)?.name ?? "不改分类";
   const tags = suggestion.tagIds.map((id) => data.tags.find((item) => item.id === id)?.name).filter(Boolean).join("，") || "不改标签";
   return `${category} · ${tags}`;
+}
+
+function suggestionChangeText(data: AppData, transaction: Transaction, suggestion: CategoryTagSuggestion): string | undefined {
+  const parts: string[] = [];
+  const currentCategory = categoryLabel(data, transaction.categoryId);
+  const nextCategory = categoryLabel(data, suggestion.categoryId ?? transaction.categoryId);
+  if ((suggestion.categoryId ?? transaction.categoryId) !== transaction.categoryId) {
+    parts.push(`分类：${currentCategory} → ${nextCategory}`);
+  }
+  const currentTags = tagsLabel(data, transaction.tagIds);
+  const nextTagIds = suggestion.tagIds.length > 0 ? suggestion.tagIds : transaction.tagIds;
+  if (!sameIds(transaction.tagIds, nextTagIds)) {
+    parts.push(`标签：${currentTags} → ${tagsLabel(data, nextTagIds)}`);
+  }
+  return parts.join("；") || undefined;
+}
+
+function suggestionHasChange(transaction: Transaction, suggestion: CategoryTagSuggestion): boolean {
+  const nextCategoryId = suggestion.categoryId ?? transaction.categoryId;
+  const nextTagIds = suggestion.tagIds.length > 0 ? suggestion.tagIds : transaction.tagIds;
+  return nextCategoryId !== transaction.categoryId || !sameIds(transaction.tagIds, nextTagIds);
+}
+
+function categoryLabel(data: AppData, categoryId?: string): string {
+  return data.categories.find((item) => item.id === categoryId)?.name ?? "未分类";
+}
+
+function tagsLabel(data: AppData, tagIds: readonly string[]): string {
+  return tagIds.map((id) => data.tags.find((item) => item.id === id)?.name).filter(Boolean).join("，") || "无标签";
+}
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => item === right[index]);
+}
+
+function currentPageRows<T>(rows: readonly T[], page: number, pageSize: number): readonly T[] {
+  return rows.slice((page - 1) * pageSize, page * pageSize);
 }

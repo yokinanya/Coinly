@@ -269,6 +269,7 @@ function budgetReferenceErrors(data: AppData, refs: ReturnType<typeof referenceS
   return data.budgets.flatMap((budget) => [
     ...currencyErrors(refs, `预算 ${budget.id}`, budget.currency),
     ...budget.categoryIds.flatMap((id) => missingRef(refs.categories, id, `预算 ${budget.id} 引用不存在的分类 ${id}`)),
+    ...(budget.offsetCategoryIds ?? []).flatMap((id) => missingRef(refs.categories, id, `预算 ${budget.id} 引用不存在的冲正分类 ${id}`)),
     ...tagReferenceErrors(refs, `预算 ${budget.id}`, budget.tagIds),
   ]);
 }

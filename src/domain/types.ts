@@ -73,6 +73,7 @@ export interface Budget extends EntityBase {
   readonly currency: CurrencyCode;
   readonly categoryIds: readonly string[];
   readonly tagIds: readonly string[];
+  readonly offsetCategoryIds?: readonly string[];
   readonly period: "monthly" | "yearly";
 }
 

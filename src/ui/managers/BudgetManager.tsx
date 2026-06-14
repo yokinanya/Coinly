@@ -3,12 +3,12 @@ import { buildReportIndex } from "../../domain/analytics";
 import type { ReportEntry } from "../../domain/analytics";
 import { budgetPeriodRange, createBase, spendingForBudgetPeriodEntries, upsertEntity } from "../../domain/operations";
 import type { Budget } from "../../domain/types";
-import { ConfirmDialog, EmptyState } from "../common";
+import { ConfirmDialog, EmptyState, MultiSelectField } from "../common";
 import { money } from "../format";
 import { BUDGET_PERIOD_LABELS } from "../labels";
 import { Button } from "../components";
 import { removeEntity, requireName, requirePositive, runUpdate } from "./managerActions";
-import { Field, ManagerDrawer, SelectField } from "./ManagerCommon";
+import { Field, ManagerDialog, SelectField } from "./ManagerCommon";
 import type { ManagerProps } from "./ManagerCommon";
 
 export function BudgetManager({ data, setData, setMessage }: ManagerProps) {
@@ -34,12 +34,26 @@ export function BudgetManager({ data, setData, setMessage }: ManagerProps) {
         <Button variant="primary" onClick={openNewBudget}>新建</Button>
       </div>
       <BudgetCards data={data} onCreate={openNewBudget} onEdit={(budget) => editBudget(budget, setDraft, setOpen)} onDelete={setPending} />
-      <ManagerDrawer open={open} title="预算" onClose={() => setOpen(false)} onSave={save}>
+      <ManagerDialog open={open} title="预算" onClose={() => setOpen(false)} onSave={save}>
         <Field label="名称" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
         <Field label="金额" type="number" inputMode="decimal" min={0} step="0.01" value={draft.amount} onChange={(amount) => setDraft({ ...draft, amount: Number(amount) })} />
         <SelectField label="币种" value={draft.currency} options={data.currencies} onChange={(currency) => setDraft({ ...draft, currency: currency as Budget["currency"] })} />
         <SelectField label="周期" value={draft.period} options={["monthly", "yearly"]} labels={BUDGET_PERIOD_LABELS} onChange={(period) => setDraft({ ...draft, period: period as Budget["period"] })} />
-      </ManagerDrawer>
+        <MultiSelectField
+          label="预算分类"
+          description="这些分类的支出会计入预算。"
+          values={draft.categoryIds}
+          options={expenseCategoryOptions(data.categories)}
+          onChange={(categoryIds) => setDraft({ ...draft, categoryIds })}
+        />
+        <MultiSelectField
+          label="冲正分类"
+          description="这些分类的收入会抵扣预算，例如出售闲置。"
+          values={draft.offsetCategoryIds ?? []}
+          options={incomeCategoryOptions(data.categories)}
+          onChange={(offsetCategoryIds) => setDraft({ ...draft, offsetCategoryIds })}
+        />
+      </ManagerDialog>
       <ConfirmDialog open={Boolean(pending)} title="确认删除" description={pending ? `确认删除“${pending.name}”？删除后不会影响历史交易。` : ""} onCancel={() => setPending(undefined)} onConfirm={remove} />
     </section>
   );
@@ -109,7 +123,7 @@ function BudgetSummary(props: {
 }
 
 function defaultBudget(currency: Budget["currency"]): Budget {
-  return { ...createBase(), name: "月度预算", amount: 1000, currency, categoryIds: [], tagIds: [], period: "monthly" };
+  return { ...createBase(), name: "月度预算", amount: 1000, currency, categoryIds: [], tagIds: [], offsetCategoryIds: [], period: "monthly" };
 }
 
 function editBudget(budget: Budget, setDraft: (budget: Budget) => void, setOpen: (open: boolean) => void) {
@@ -119,4 +133,12 @@ function editBudget(budget: Budget, setDraft: (budget: Budget) => void, setOpen:
 
 function dateRange(start: string, end: string): string {
   return `${new Date(start).toLocaleDateString("zh-CN")} - ${new Date(end).toLocaleDateString("zh-CN")}`;
+}
+
+function expenseCategoryOptions(categories: readonly { readonly id: string; readonly name: string; readonly direction: "income" | "expense" }[]) {
+  return categories.filter((category) => category.direction === "expense").map((category) => ({ value: category.id, label: category.name }));
+}
+
+function incomeCategoryOptions(categories: readonly { readonly id: string; readonly name: string; readonly direction: "income" | "expense" }[]) {
+  return categories.filter((category) => category.direction === "income").map((category) => ({ value: category.id, label: category.name }));
 }

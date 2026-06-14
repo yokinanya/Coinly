@@ -8,7 +8,7 @@ import { money } from "../format";
 import { ACCOUNT_KIND_LABELS, RECURRING_INTERVAL_LABELS } from "../labels";
 import { Button, List, Switch } from "../components";
 import { removeEntity, requireName, requirePositive, runUpdate } from "./managerActions";
-import { Field, ManagerDrawer, SelectField } from "./ManagerCommon";
+import { Field, ManagerDialog, SelectField } from "./ManagerCommon";
 import type { ManagerProps } from "./ManagerCommon";
 
 export function RecurringRuleManager({ data, setData, setMessage }: ManagerProps) {
@@ -36,7 +36,7 @@ export function RecurringRuleManager({ data, setData, setMessage }: ManagerProps
         <Button variant="primary" onClick={() => createRule(account, setDraft, setDateTouched, setOpen)}>新建</Button>
       </div>
       <RecurringList rules={data.recurringRules} onEdit={(rule) => editRule(rule, setDraft, setDateTouched, setOpen)} onDelete={setPending} />
-      <ManagerDrawer open={open} title="订阅规则" contentClassName="space-y-6 py-1" onClose={() => setOpen(false)} onSave={save}>
+      <ManagerDialog open={open} title="订阅规则" contentClassName="space-y-6 py-1" onClose={() => setOpen(false)} onSave={save}>
         <Field label="名称" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
         <SelectField label="周期" value={draft.interval} options={RECURRING_INTERVALS} labels={RECURRING_INTERVAL_LABELS} onChange={(interval) => setDraft(changeInterval(draft, interval as RecurringRule["interval"], dateTouched))} />
         <div className="py-0.5">
@@ -58,7 +58,7 @@ export function RecurringRuleManager({ data, setData, setMessage }: ManagerProps
           <TextAreaField label="备注" value={draft.transaction.note} onChange={(note) => setDraft({ ...draft, transaction: { ...draft.transaction, note } })} />
         </div>
         <label className="flex items-center gap-2 pt-2 text-sm"><Switch checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />启用</label>
-      </ManagerDrawer>
+      </ManagerDialog>
       <ConfirmDialog open={Boolean(pending)} title="确认删除" description={pending ? `确认删除“${pending.name}”？已生成的历史交易不会被删除。` : ""} onCancel={() => setPending(undefined)} onConfirm={remove} />
     </section>
   );

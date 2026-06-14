@@ -4,7 +4,7 @@ import type { Category } from "../../domain/types";
 import { ConfirmDialog, EmptyState } from "../common";
 import { Button, List } from "../components";
 import { removeEntity, requireName, runUpdate } from "./managerActions";
-import { Field, ManagerDrawer, SelectField } from "./ManagerCommon";
+import { Field, ManagerDialog, SelectField } from "./ManagerCommon";
 import type { ManagerProps } from "./ManagerCommon";
 
 export function CategoryManager({ data, setData, setMessage }: ManagerProps) {
@@ -33,11 +33,11 @@ export function CategoryManager({ data, setData, setMessage }: ManagerProps) {
         rowKey="id"
         renderItem={(category) => <CategoryRow category={category} labels={labels} onEdit={(item) => editCategory(item, setDraft, setOpen)} onDelete={setPending} />}
       />
-      <ManagerDrawer open={open} title="分类" onClose={() => setOpen(false)} onSave={save}>
+      <ManagerDialog open={open} title="分类" onClose={() => setOpen(false)} onSave={save}>
         <Field label="名称" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
         <SelectField label="方向" value={draft.direction} options={["expense", "income"]} labels={CATEGORY_DIRECTION_LABELS} onChange={(direction) => setDraft({ ...draft, direction: direction as Category["direction"] })} />
         <SelectField label="父分类" value={draft.parentId ?? ""} options={["", ...parents]} labels={labels} onChange={(parentId) => setDraft({ ...draft, parentId: parentId || undefined })} />
-      </ManagerDrawer>
+      </ManagerDialog>
       <ConfirmDialog open={Boolean(pending)} title="确认删除" description={pending ? `确认删除“${pending.name}”？有关联交易时会被阻止。` : ""} onCancel={() => setPending(undefined)} onConfirm={remove} />
     </section>
   );

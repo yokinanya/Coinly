@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from "react";
+import { Pencil, RotateCcw, Trash2 } from "lucide-react";
 import type { AppData, Transaction } from "../domain/types";
 import { dateOnly, money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
@@ -133,10 +134,10 @@ const TransactionCard = memo(function TransactionCard(props: TransactionTablePro
         <span className="truncate">账户：{props.accounts[row.accountId] ?? "-"}</span>
         <span className="truncate">分类：{props.categories[row.categoryId ?? ""] ?? "-"}</span>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-(--color-border) pt-3">
-        <Button className="min-w-0 px-2 text-xs" onClick={() => props.onEdit(row)}>编辑</Button>
-        {row.kind === "expense" && <Button className="min-w-0 px-2 text-xs" onClick={() => props.onRefund(row)}>退款</Button>}
-        <Button className="min-w-0 px-2 text-xs" variant="danger" onClick={() => props.onDelete(row)}>删除</Button>
+      <div className="mt-3 flex flex-nowrap gap-2 border-t border-(--color-border) pt-3">
+        <CompactActionButton label="编辑" icon={<Pencil size={14} />} onClick={() => props.onEdit(row)} />
+        {row.kind === "expense" && <CompactActionButton label="退款" icon={<RotateCcw size={14} />} onClick={() => props.onRefund(row)} />}
+        <CompactActionButton label="删除" icon={<Trash2 size={14} />} variant="danger" onClick={() => props.onDelete(row)} />
       </div>
     </article>
   );
@@ -149,11 +150,31 @@ function RowActions(props: {
   readonly remove: (transaction: Transaction) => void;
 }) {
   return (
-    <span className="flex gap-2">
-      <Button onClick={() => props.edit(props.row)}>编辑</Button>
-      {props.row.kind === "expense" && <Button onClick={() => props.refund(props.row)}>退款</Button>}
-      <Button variant="danger" onClick={() => props.remove(props.row)}>删除</Button>
+    <span className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+      <CompactActionButton label="编辑" icon={<Pencil size={14} />} onClick={() => props.edit(props.row)} />
+      {props.row.kind === "expense" && <CompactActionButton label="退款" icon={<RotateCcw size={14} />} onClick={() => props.refund(props.row)} />}
+      <CompactActionButton label="删除" icon={<Trash2 size={14} />} variant="danger" onClick={() => props.remove(props.row)} />
     </span>
+  );
+}
+
+function CompactActionButton(props: {
+  readonly label: string;
+  readonly icon: React.ReactNode;
+  readonly variant?: "danger";
+  readonly onClick: () => void;
+}) {
+  return (
+    <Button
+      className={`min-w-0 gap-1 px-2 text-xs whitespace-nowrap ${props.variant === "danger" ? "shrink-0" : "shrink-0"}`}
+      variant={props.variant}
+      title={props.label}
+      aria-label={props.label}
+      onClick={props.onClick}
+    >
+      {props.icon}
+      <span className="hidden xl:inline">{props.label}</span>
+    </Button>
   );
 }
 

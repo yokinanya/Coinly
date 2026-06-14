@@ -137,8 +137,8 @@ export function spendingForBudget(data: AppData, budgetId: string): number {
     throw new Error(`Budget not found: ${budgetId}`);
   }
   return reportEntries(data)
-    .filter((entry) => matchesBudget(entry, budget.categoryIds, budget.tagIds))
-    .reduce((total, entry) => total + entry.amount, 0);
+    .filter((entry) => matchesBudget(entry, budget.categoryIds, budget.tagIds, budget.offsetCategoryIds))
+    .reduce((total, entry) => total + budgetEntryAmount(entry, budget.offsetCategoryIds), 0);
 }
 
 function addTagSummaries(
@@ -194,10 +194,19 @@ function matchesBudget(
   entry: ReportEntry,
   categoryIds: readonly string[],
   tagIds: readonly string[],
+  offsetCategoryIds: readonly string[] = [],
 ): boolean {
   const categoryMatches = categoryIds.length === 0 || categoryIds.includes(entry.categoryId ?? "");
+  const offsetCategoryMatches = offsetCategoryIds.includes(entry.categoryId ?? "");
   const tagMatches = tagIds.length === 0 || tagIds.some((tagId) => entry.tagIds.includes(tagId));
-  return entry.kind === "expense" && categoryMatches && tagMatches;
+  return ((entry.kind === "expense" && categoryMatches) || (entry.kind === "income" && offsetCategoryMatches)) && tagMatches;
+}
+
+function budgetEntryAmount(entry: ReportEntry, offsetCategoryIds: readonly string[]): number {
+  if (entry.kind === "income" && offsetCategoryIds.includes(entry.categoryId ?? "")) {
+    return -entry.amount;
+  }
+  return entry.amount;
 }
 
 function transactionEntry(transaction: Transaction): readonly ReportEntry[] {

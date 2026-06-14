@@ -67,6 +67,13 @@ describe("operations", () => {
     expect(spendingForBudgetPeriod(data, budget, new Date("2026-05-10"))).toBe(30);
   });
 
+  it("offsets budget spending with configured income categories", () => {
+    const data = dataWithBudgetOffsetTransactions();
+    const budget = data.budgets[0];
+
+    expect(spendingForBudgetPeriod(data, budget, new Date("2026-05-10"))).toBe(20);
+  });
+
   it("validates transaction drafts before saving", () => {
     const data = dataWithBudgetAndTransactions();
     const result = validateTransactionDraft(data, {
@@ -274,6 +281,7 @@ function dataWithBudgetAndTransactions(): AppData {
     currency: "CNY",
     categoryIds: ["food"],
     tagIds: [],
+    offsetCategoryIds: [],
     period: "monthly",
   };
   return {
@@ -285,6 +293,38 @@ function dataWithBudgetAndTransactions(): AppData {
       transaction("current", "CNY", "2026-05-02T00:00:00.000Z"),
       transaction("old", "CNY", "2026-04-02T00:00:00.000Z"),
       transaction("foreign", "USD", "2026-05-02T00:00:00.000Z", ["foreign"]),
+    ],
+  };
+}
+
+function dataWithBudgetOffsetTransactions(): AppData {
+  const base = initialData();
+  const expenseCategory = { ...base.categories[0], id: "food", direction: "expense" as const };
+  const offsetCategory = { ...base.categories.find((category) => category.direction === "income"), id: "resale", name: "出售二手", direction: "income" as const };
+  const budget: Budget = {
+    id: "budget",
+    createdAt: "2026-05-01T00:00:00.000Z",
+    updatedAt: "2026-05-01T00:00:00.000Z",
+    name: "餐饮预算",
+    amount: 100,
+    currency: "CNY",
+    categoryIds: ["food"],
+    tagIds: [],
+    offsetCategoryIds: ["resale"],
+    period: "monthly",
+  };
+  return {
+    ...base,
+    categories: [expenseCategory, offsetCategory].filter(Boolean) as AppData["categories"],
+    budgets: [budget],
+    transactions: [
+      transaction("expense", "CNY", "2026-05-02T00:00:00.000Z"),
+      {
+        ...transaction("offset", "CNY", "2026-05-03T00:00:00.000Z", []),
+        kind: "income",
+        amount: 10,
+        categoryId: "resale",
+      },
     ],
   };
 }
