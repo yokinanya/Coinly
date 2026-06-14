@@ -136,9 +136,10 @@ export function spendingForBudget(data: AppData, budgetId: string): number {
   if (!budget) {
     throw new Error(`Budget not found: ${budgetId}`);
   }
+  const offsetCategoryIds = budget.offsetCategoryIds ?? [];
   return reportEntries(data)
-    .filter((entry) => matchesBudget(entry, budget.categoryIds, budget.tagIds, budget.offsetCategoryIds))
-    .reduce((total, entry) => total + budgetEntryAmount(entry, budget.offsetCategoryIds), 0);
+    .filter((entry) => matchesBudget(entry, budget.categoryIds, budget.tagIds, offsetCategoryIds))
+    .reduce((total, entry) => total + budgetEntryAmount(entry, offsetCategoryIds), 0);
 }
 
 function addTagSummaries(

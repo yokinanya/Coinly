@@ -360,17 +360,20 @@ function generateSuggestions(options: AiHubViewProps & {
   Promise.resolve()
     .then(() => {
       const provider = createAiProvider(options.data.aiSettings);
-      return Promise.all(options.targets.map((transaction) => provider.suggestCategoryTag(draftFromTransaction(transaction), options.data)
-        .then((value) => {
+      return Promise.all(options.targets.map(async (transaction): Promise<SuggestionRow | undefined> => {
+        try {
+          const value = await provider.suggestCategoryTag(draftFromTransaction(transaction), options.data);
           const result = validateCategoryTagSuggestion(value, options.data, draftFromTransaction(transaction));
           const hasSuggestion = Boolean(result.suggestion && suggestionHasChange(transaction, result.suggestion));
-          if (!hasSuggestion) return undefined;
-          return { transaction, selected: true, suggestion: result.suggestion, errors: result.errors } satisfies SuggestionRow;
-        })
-        .catch((error: unknown) => ({ transaction, selected: false, suggestion: undefined, errors: [error instanceof Error ? error.message : "AI 建议失败"] } satisfies SuggestionRow))));
+          if (!hasSuggestion || !result.suggestion) return undefined;
+          return { transaction, selected: true, suggestion: result.suggestion, errors: result.errors };
+        } catch (error: unknown) {
+          return { transaction, selected: false, suggestion: undefined, errors: [error instanceof Error ? error.message : "AI 建议失败"] };
+        }
+      }));
     })
     .then((rows) => {
-      const nextRows = rows.filter((row): row is SuggestionRow => Boolean(row));
+      const nextRows = rows.filter((row): row is SuggestionRow => row !== undefined);
       options.setRows(nextRows);
       options.setPage(1);
       options.setState({ tone: "success", text: `已生成 ${nextRows.length} 条建议` });
