@@ -17,6 +17,10 @@ export interface SyncResult {
   readonly reason?: string;
 }
 
+export interface SyncOptions {
+  readonly throttle?: boolean;
+}
+
 export type SyncStatus =
   | "disabled"
   | "throttled"
@@ -48,11 +52,12 @@ interface RemoteData {
   readonly version?: string;
 }
 
-export async function syncData(data: AppData, settings?: SyncSettings): Promise<SyncResult> {
+export async function syncData(data: AppData, settings?: SyncSettings, options?: SyncOptions): Promise<SyncResult> {
   const normalized = normalizeSyncSettings(settings);
   if (!normalized) return { status: "disabled" };
   const targets = enabledAutoTargets(normalized);
   if (targets.length === 0) return { status: "disabled" };
+  if (!options?.throttle) return syncActiveTargets(data, toActiveTargets(targets));
   const dueTargets = targets.filter(isAutoSyncDue);
   if (dueTargets.length === 0) return { status: "throttled", reason: "自动同步频率控制中，请稍后重试" };
   markAutoSyncAttempt(dueTargets);

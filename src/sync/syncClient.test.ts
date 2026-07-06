@@ -103,6 +103,27 @@ describe("syncClient", () => {
     ]));
   });
 
+  it("throttles repeated automatic syncs but allows manual syncs", async () => {
+    const data = initialData();
+    const target = s3Target({ forcePathStyle: true });
+    const settings = { enabled: true, targets: [target] };
+    const fetchMock = stubFetch([
+      new Response("", { status: 404 }),
+      new Response("", { status: 200 }),
+      new Response("", { status: 404 }),
+      new Response("", { status: 200 }),
+    ]);
+
+    const automatic = await syncData(data, settings, { throttle: true });
+    const throttled = await syncData(data, settings, { throttle: true });
+    const manual = await syncData(data, settings);
+
+    expect(automatic.status).toBe("uploaded");
+    expect(throttled.status).toBe("throttled");
+    expect(manual.status).toBe("uploaded");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it("fails when any enabled target write fails", async () => {
     const data = initialData();
     stubFetch([

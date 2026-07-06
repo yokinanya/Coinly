@@ -9,6 +9,7 @@ export interface VaultGateSubmitOptions {
   readonly passphrase: string;
   readonly rememberDevice: boolean;
   readonly syncSettingsPackage?: string;
+  readonly fullDataPackage?: string;
 }
 
 interface SyncSettingsFile {
@@ -25,6 +26,7 @@ export function VaultGate(props: {
   const [passphrase, setPassphrase] = useState("");
   const [rememberDevice, setRememberDevice] = useState(true);
   const [syncSettingsFile, setSyncSettingsFile] = useState<SyncSettingsFile>();
+  const [fullDataFile, setFullDataFile] = useState<SyncSettingsFile>();
   const [fileError, setFileError] = useState("");
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -35,6 +37,7 @@ export function VaultGate(props: {
       passphrase,
       rememberDevice,
       syncSettingsPackage: syncSettingsFile?.content,
+      fullDataPackage: fullDataFile?.content,
     }).finally(() => setSubmitting(false));
   };
   return (
@@ -47,16 +50,19 @@ export function VaultGate(props: {
           {mode === "create" && (
             <SyncSettingsImportPicker
               file={syncSettingsFile}
+              fullDataFile={fullDataFile}
               fileError={fileError}
               openQrScanner={() => setQrScannerOpen(true)}
               clear={() => clearSyncSettingsFile(setSyncSettingsFile, setFileError)}
+              clearFullData={() => clearSyncSettingsFile(setFullDataFile, setFileError)}
               select={(file) => selectSyncSettingsFile(file, setSyncSettingsFile, setFileError)}
+              selectFullData={(file) => selectSyncSettingsFile(file, setFullDataFile, setFileError)}
               selectQrImage={(file) => selectSyncSettingsQrImage(file, setSyncSettingsFile, setFileError)}
             />
           )}
           <RememberPassphrase checked={rememberDevice} onChange={setRememberDevice} />
-          <Button className="w-full sm:w-auto" variant="primary" disabled={syncSettingsFile?.loading} loading={submitting} onClick={submit}>
-            {submitLabel(mode, syncSettingsFile)}
+          <Button className="w-full sm:w-auto" variant="primary" disabled={syncSettingsFile?.loading || fullDataFile?.loading} loading={submitting} onClick={submit}>
+            {submitLabel(mode, syncSettingsFile, fullDataFile)}
           </Button>
         </div>
         {mode === "create" && (
@@ -100,14 +106,20 @@ function PasswordField(props: {
 
 function SyncSettingsImportPicker(props: {
   readonly file?: SyncSettingsFile;
+  readonly fullDataFile?: SyncSettingsFile;
   readonly fileError: string;
   readonly openQrScanner: () => void;
   readonly clear: () => void;
+  readonly clearFullData: () => void;
   readonly select: (file: File) => string;
+  readonly selectFullData: (file: File) => string;
   readonly selectQrImage: (file: File) => string;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+      <Upload accept="application/json" beforeUpload={props.selectFullData} maxCount={1} showUploadList={false}>
+        <Button aria-label="导入全量数据文件" title="导入全量数据文件"><UploadIcon size={16} />全量数据</Button>
+      </Upload>
       <Upload accept="application/json" beforeUpload={props.select} maxCount={1} showUploadList={false}>
         <Button aria-label="导入同步源配置" title="导入同步源配置"><UploadIcon size={16} /></Button>
       </Upload>
@@ -116,6 +128,7 @@ function SyncSettingsImportPicker(props: {
         <Button aria-label="导入二维码图片" title="导入二维码图片"><ImageUp size={16} /></Button>
       </Upload>
       {props.file && <SelectedSyncSettingsFile file={props.file} clear={props.clear} />}
+      {props.fullDataFile && <SelectedSyncSettingsFile file={props.fullDataFile} clear={props.clearFullData} />}
       {props.fileError && <span className="text-sm text-red-600">{props.fileError}</span>}
     </div>
   );
@@ -291,6 +304,9 @@ function modeDescription(mode: VaultMode): string {
   return mode === "unlock" ? "输入口令以加载本地账本。" : "先设置本地账本口令。";
 }
 
-function submitLabel(mode: VaultMode, syncSettingsFile?: SyncSettingsFile): string {
-  return mode === "unlock" ? "解锁账本" : syncSettingsFile?.content ? "导入同步源并创建账本" : "创建账本";
+function submitLabel(mode: VaultMode, syncSettingsFile?: SyncSettingsFile, fullDataFile?: SyncSettingsFile): string {
+  if (mode === "unlock") return "解锁账本";
+  if (fullDataFile?.content) return "导入全量数据并创建账本";
+  if (syncSettingsFile?.content) return "导入同步源并创建账本";
+  return "创建账本";
 }

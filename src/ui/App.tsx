@@ -207,7 +207,7 @@ function syncCurrentData(options: {
 }): void {
   if (options.syncingRef.current) return;
   options.syncingRef.current = true;
-  syncData(options.data, options.data.syncSettings)
+  syncData(options.data, options.data.syncSettings, { throttle: true })
     .then((result) => handleAutoSyncResult(result, options))
     .catch((error: unknown) => options.setMessage(errorMessage(error, "同步失败")))
     .finally(() => {

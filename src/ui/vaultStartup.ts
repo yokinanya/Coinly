@@ -3,7 +3,9 @@ import type { AppData } from "../domain/types";
 import { inspectStoredVault, loadData, saveData } from "../storage/indexedDb";
 import type { LoadedDataResult } from "../storage/indexedDb";
 import type { StoredVaultState } from "../storage/indexedDb";
-import { initializeVault, tryUnlockRememberedDevice, unlockVaultWithPassphrase } from "../storage/vaultSession";
+import { decryptAppData, isEncryptedPackage } from "../storage/encryption";
+import { parseImportedData } from "../storage/indexedDb";
+import { currentUnlockState, initializeVault, tryUnlockRememberedDevice, unlockVaultWithPassphrase } from "../storage/vaultSession";
 import { loadDataFromSyncSettings } from "../sync/syncBootstrap";
 import { previewSyncSettingsPackage } from "../sync/syncSettingsPackage";
 import type { StatusMessage } from "./common";
@@ -13,6 +15,7 @@ export interface SubmitVaultOptions {
   readonly passphrase: string;
   readonly rememberDevice: boolean;
   readonly syncSettingsPackage?: string;
+  readonly fullDataPackage?: string;
   readonly setData: (data: AppData) => void;
   readonly setSaveToken: (token: { readonly version: number }) => void;
   readonly setStatus: (value: StatusMessage) => void;
@@ -44,9 +47,20 @@ export async function submitVault(options: SubmitVaultOptions): Promise<void> {
 }
 
 async function loadSubmittedData(options: SubmitVaultOptions): Promise<LoadedDataResult> {
+  if (options.fullDataPackage) return loadFromFullDataPackage(options);
   if (options.syncSettingsPackage) return loadFromSyncSettingsPackage(options);
   await unlockOrCreateVault(options.state, options.passphrase, options.rememberDevice);
   return loadData();
+}
+
+async function loadFromFullDataPackage(options: SubmitVaultOptions): Promise<LoadedDataResult> {
+  if (options.state.kind !== "empty") throw new Error("只能在创建账本时导入全量数据文件");
+  if (isEncryptedPackage(options.fullDataPackage ?? "")) {
+    await unlockVaultWithPassphrase(options.fullDataPackage ?? "", options.passphrase, options.rememberDevice);
+    return { data: await decryptAppData(options.fullDataPackage ?? "", currentUnlockState()), token: { version: 0 } };
+  }
+  await initializeVault(options.passphrase, options.rememberDevice);
+  return { data: parseImportedData(options.fullDataPackage ?? ""), token: { version: 0 } };
 }
 
 async function loadFromSyncSettingsPackage(options: SubmitVaultOptions): Promise<LoadedDataResult> {
