@@ -142,15 +142,30 @@ export interface SyncSettings {
 }
 
 export interface AiModelSettings {
+  readonly id?: string;
+  readonly name?: string;
   readonly model: string;
   readonly contextTokenBudget?: number;
   readonly supportsVision?: boolean;
+}
+
+export interface AiProviderSettings {
+  readonly id: string;
+  readonly name: string;
+  readonly protocol: "openai-compatible";
+  readonly endpoint: string;
+  readonly apiKey: string;
+  readonly models: readonly AiModelSettings[];
+  readonly defaultModelId?: string;
 }
 
 export interface AiSettings {
   readonly provider: "openai-compatible";
   readonly endpoint: string;
   readonly apiKey: string;
+  readonly providers?: readonly AiProviderSettings[];
+  readonly activeProviderId?: string;
+  readonly activeModelId?: string;
   readonly textModel?: AiModelSettings;
   readonly visionModel?: AiModelSettings;
   readonly model?: string;

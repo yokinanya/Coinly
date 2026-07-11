@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AiSettings } from "../domain/types";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
-import { normalizeAiSettings, selectVisionModel } from "./settings";
+import { normalizeAiSettings, selectActiveModel, selectActiveProvider, selectVisionModel } from "./settings";
 
 describe("resolveAiModelCapabilities", () => {
   it("uses model presets for large and medium context windows", () => {
@@ -61,6 +61,26 @@ describe("resolveAiModelCapabilities", () => {
     expect(normalized.endpoint).toBe("https://api.example/v1");
     expect(normalized.textModel).toMatchObject({ model: "legacy-text", contextTokenBudget: 32_000, supportsVision: false });
     expect(selectVisionModel(normalized).model).not.toBe("legacy-text");
+    expect(normalized.providers).toHaveLength(1);
+    expect(normalized.providers[0]).toMatchObject({ id: "default", endpoint: "https://api.example/v1", apiKey: "key" });
+  });
+
+  it("selects an enabled provider and model from the provider registry", () => {
+    const normalized = normalizeAiSettings({
+      provider: "openai-compatible",
+      endpoint: "",
+      apiKey: "",
+      activeProviderId: "secondary",
+      activeModelId: "reasoning",
+      providers: [
+        { id: "primary", name: "Primary", protocol: "openai-compatible", endpoint: "https://one.example/v1", apiKey: "one", models: [{ id: "chat", model: "chat-model" }] },
+        { id: "secondary", name: "Secondary", protocol: "openai-compatible", endpoint: "https://two.example/v1/chat/completions", apiKey: "two", defaultModelId: "chat", models: [{ id: "chat", model: "chat-model" }, { id: "reasoning", model: "reasoning-model" }] },
+      ],
+    });
+
+    expect(selectActiveProvider(normalized)).toMatchObject({ id: "secondary", endpoint: "https://two.example/v1", apiKey: "two" });
+    expect(selectActiveModel(normalized)).toMatchObject({ id: "reasoning", model: "reasoning-model" });
+    expect(normalized).toMatchObject({ endpoint: "https://two.example/v1", apiKey: "two", model: "reasoning-model" });
   });
 
   it("keeps explicitly empty model fields empty", () => {

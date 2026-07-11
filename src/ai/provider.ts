@@ -1,7 +1,7 @@
 import type { AiModelSettings, AiSettings, AppData, TransactionDraft } from "../domain/types";
 import { analysisScopeLabel, buildAnalysisContext, buildDraftSystemPrompt, buildQueryContext, buildSuggestionContext, type AnalysisScope } from "./context";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
-import { defaultAiSettings, normalizeAiSettings, selectTextModel, selectVisionModel, type NormalizedAiSettings } from "./settings";
+import { defaultAiSettings, normalizeAiSettings, selectTextModel, withAiSelection, type NormalizedAiSettings } from "./settings";
 import type { CategoryTagSuggestion } from "./validation";
 
 export interface AiProvider {
@@ -10,7 +10,12 @@ export interface AiProvider {
   parseTextBatch(input: string, data: AppData): Promise<readonly TransactionDraft[]>;
   suggestCategoryTag(transaction: TransactionDraft, data: AppData): Promise<CategoryTagSuggestion>;
   analyze(data: AppData, options?: { readonly scope?: AnalysisScope }): Promise<string>;
-  ask(question: string, data: AppData): Promise<string>;
+  ask(question: string, data: AppData, image?: File): Promise<AiAssistantResponse>;
+}
+
+export interface AiAssistantResponse {
+  readonly answer: string;
+  readonly transactionDrafts: readonly TransactionDraft[];
 }
 
 export function buildAnalysisInput(data: AppData): string {
@@ -22,15 +27,74 @@ interface ChatResponse {
   readonly choices: readonly {
     readonly message?: {
       readonly content?: string;
+      readonly tool_calls?: readonly ToolCall[];
     };
   }[];
 }
 
+interface ToolCall {
+  readonly id: string;
+  readonly type: "function";
+  readonly function: {
+    readonly name: string;
+    readonly arguments: string;
+  };
+}
+
+const LEDGER_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "query_ledger",
+      description: "查询账本的交易、分类、标签、预算和汇总数据。回答任何金额、消费、收入、类别或交易问题前都应调用。",
+      parameters: {
+        type: "object",
+        properties: { question: { type: "string", description: "需要在账本中核对的具体问题" } },
+        required: ["question"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_ledger",
+      description: "按时间范围生成账本的聚合分析数据。仅在用户明确要求分析、趋势、报告、总结或风险时调用。",
+      parameters: {
+        type: "object",
+        properties: {
+          scope: {
+            type: "string",
+            enum: ["current-month", "last-3-months", "last-6-months", "year-to-date"],
+            description: "分析时间范围",
+          },
+        },
+        required: ["scope"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "prepare_transaction",
+      description: "当用户要求记录、记账、添加或创建交易时调用。工具只生成待确认交易，绝不会直接保存。",
+      parameters: {
+        type: "object",
+        properties: { input: { type: "string", description: "需要解析的交易描述；图片场景可复述用户意图" } },
+        required: ["input"],
+        additionalProperties: false,
+      },
+    },
+  },
+] as const;
+
 export function createAiProvider(settings?: AiSettings): AiProvider {
-  if (!settings?.apiKey) {
+  const normalized = normalizeAiSettings(settings ?? defaultAiSettings());
+  if (!normalized.apiKey) {
     throw new Error("请先在设置中配置 AI API Key");
   }
-  return new OpenAiCompatibleProvider(normalizeAiSettings(settings));
+  return new OpenAiCompatibleProvider(normalized);
 }
 
 class OpenAiCompatibleProvider implements AiProvider {
@@ -53,10 +117,11 @@ class OpenAiCompatibleProvider implements AiProvider {
   }
 
   async parseImage(image: File, data: AppData): Promise<TransactionDraft> {
-    const model = this.settings.visionModel;
+    const visionSettings = selectVisionSettings(this.settings);
+    const model = visionSettings.textModel;
     assertVisionSupported(model);
     const dataUrl = await readAsDataUrl(image);
-    return requestDraft(this.settings, model, [
+    return requestDraft(visionSettings, model, [
       buildDraftSystemPrompt(data, { settings: model }),
       {
         role: "user",
@@ -91,13 +156,15 @@ class OpenAiCompatibleProvider implements AiProvider {
     return parseSuggestionContent(content);
   }
 
-  async ask(question: string, data: AppData): Promise<string> {
+  async ask(question: string, data: AppData, image?: File): Promise<AiAssistantResponse> {
     const model = this.settings.textModel;
-    const response = await requestChat(this.settings, model, [
+    const content = image
+      ? await imageQueryContent(model, question, image)
+      : question;
+    return requestToolAssistedAnswer(this.settings, model, data, image, question, [
       { role: "system", content: askPrompt() },
-      { role: "user", content: JSON.stringify(buildQueryContext(data, question, { settings: model })) },
+      { role: "user", content },
     ]);
-    return response.choices[0]?.message?.content ?? "";
   }
 }
 
@@ -114,6 +181,23 @@ function assertVisionSupported(settings: AiModelSettings): void {
   if (!resolveAiModelCapabilities(settings).supportsVision) {
     throw new Error("当前 AI 图片模型不支持图片解析，请在设置中更换多模态模型或手动开启图片能力");
   }
+}
+
+function selectVisionSettings(settings: NormalizedAiSettings): NormalizedAiSettings {
+  for (const provider of settings.providers) {
+    if (!provider.apiKey) continue;
+    const model = provider.models.find((item) => item.id === settings.visionModel.id && item.model === settings.visionModel.model);
+    if (model) return withAiSelection(settings, provider.id, model.id);
+  }
+  return settings;
+}
+
+async function imageQueryContent(model: AiModelSettings, context: string, image: File): Promise<readonly unknown[]> {
+  assertVisionSupported(model);
+  return [
+    { type: "text", text: context },
+    { type: "image_url", image_url: { url: await readAsDataUrl(image) } },
+  ];
 }
 
 function analysisPrompt(scopeLabel: string): string {
@@ -146,11 +230,95 @@ function suggestionPrompt(context: unknown): string {
 
 function askPrompt(): string {
   return [
-    "你是 Coinly 的只读问账助手，只能基于用户提供的账本上下文回答，不要编造数据。",
+    "你是 Coinly 的只读问账助手。需要账本事实时，必须通过提供的工具获取数据；不要编造数据。",
+    "你自行判断是否以及何时调用工具，不要向用户展示工具、模式或内部路由。",
+    "prepare_transaction 只生成待用户确认的候选交易，调用后必须明确说明尚未保存，等待用户确认。",
+    "绝不能声称已经创建、修改或删除交易、分类、标签、预算或订阅。",
     "涉及金额时必须带币种代码或币种名称。没有足够数据时直接说明无法确定。",
-    "不要声称已经创建、修改或删除任何交易、分类、标签、预算或订阅。",
     "输出简洁中文 Markdown；能给出可核对的分类、时间范围或交易备注时就写清楚。",
   ].join("\n");
+}
+
+async function requestToolAssistedAnswer(
+  settings: NormalizedAiSettings,
+  model: AiModelSettings,
+  data: AppData,
+  image: File | undefined,
+  userQuestion: string,
+  initialMessages: readonly unknown[],
+): Promise<AiAssistantResponse> {
+  const messages: unknown[] = [...initialMessages];
+  const transactionDrafts: TransactionDraft[] = [];
+  for (let round = 0; round < 4; round += 1) {
+    const response = await requestChat(settings, model, messages, { tools: LEDGER_TOOLS });
+    const message = response.choices[0]?.message;
+    const calls = message?.tool_calls ?? [];
+    if (calls.length === 0) return { answer: message?.content ?? "", transactionDrafts };
+    messages.push({ role: "assistant", content: message?.content ?? "", tool_calls: calls });
+    for (const call of calls) {
+      const result = await executeLedgerTool(call, data, model, settings, image, userQuestion);
+      transactionDrafts.push(...result.transactionDrafts);
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify(result.content),
+      });
+    }
+  }
+  throw new Error("AI 工具调用次数过多，请缩小问题范围后重试");
+}
+
+async function executeLedgerTool(
+  call: ToolCall,
+  data: AppData,
+  model: AiModelSettings,
+  settings: NormalizedAiSettings,
+  image: File | undefined,
+  userQuestion: string,
+): Promise<{ readonly content: unknown; readonly transactionDrafts: readonly TransactionDraft[] }> {
+  let argumentsValue: Record<string, unknown>;
+  try {
+    argumentsValue = JSON.parse(call.function.arguments) as Record<string, unknown>;
+  } catch {
+    return { content: { error: "工具参数不是合法 JSON" }, transactionDrafts: [] };
+  }
+  if (call.function.name === "query_ledger") {
+    const question = typeof argumentsValue.question === "string" ? argumentsValue.question : "";
+    return { content: question ? buildQueryContext(data, question, { settings: model }) : { error: "缺少 question 参数" }, transactionDrafts: [] };
+  }
+  if (call.function.name === "analyze_ledger") {
+    const scope = argumentsValue.scope;
+    return { content: isAnalysisScope(scope)
+      ? buildAnalysisContext(data, { settings: model, analysisScope: scope })
+      : { error: "scope 参数无效" }, transactionDrafts: [] };
+  }
+  if (call.function.name === "prepare_transaction") {
+    const input = typeof argumentsValue.input === "string" && argumentsValue.input.trim() ? argumentsValue.input : userQuestion;
+    const drafts = await prepareTransactionDrafts(settings, model, data, input, image);
+    return { content: { candidates: drafts, requiresConfirmation: true }, transactionDrafts: drafts };
+  }
+  return { content: { error: `不允许调用工具 ${call.function.name}` }, transactionDrafts: [] };
+}
+
+async function prepareTransactionDrafts(settings: NormalizedAiSettings, model: AiModelSettings, data: AppData, input: string, image?: File): Promise<readonly TransactionDraft[]> {
+  if (image) {
+    const visionSettings = selectVisionSettings(settings);
+    const visionModel = visionSettings.textModel;
+    assertVisionSupported(visionModel);
+    const draft = await requestDraft(visionSettings, visionModel, [
+      buildDraftSystemPrompt(data, { settings: visionModel }),
+      { role: "user", content: [{ type: "text", text: `根据图片和用户意图解析交易，只返回 TransactionDraft JSON：${input}` }, { type: "image_url", image_url: { url: await readAsDataUrl(image) } }] },
+    ]);
+    return [draft];
+  }
+  return requestDrafts(settings, model, [
+    buildDraftSystemPrompt(data, { settings: model, input, mode: "batch" }),
+    { role: "user", content: `解析交易描述，只返回 TransactionDraft JSON 数组：${input}` },
+  ]);
+}
+
+function isAnalysisScope(value: unknown): value is AnalysisScope {
+  return value === "current-month" || value === "last-3-months" || value === "last-6-months" || value === "year-to-date";
 }
 
 async function requestDraft(settings: NormalizedAiSettings, model: AiModelSettings, messages: readonly unknown[]): Promise<TransactionDraft> {
@@ -171,7 +339,12 @@ async function requestDrafts(settings: NormalizedAiSettings, model: AiModelSetti
   return parseDraftArrayContent(content);
 }
 
-async function requestChat(settings: NormalizedAiSettings, model: AiModelSettings, messages: readonly unknown[]): Promise<ChatResponse> {
+async function requestChat(
+  settings: NormalizedAiSettings,
+  model: AiModelSettings,
+  messages: readonly unknown[],
+  options: { readonly tools?: readonly unknown[] } = {},
+): Promise<ChatResponse> {
   if (!model.model.trim()) {
     throw new Error("请先在设置中配置 AI 模型");
   }
@@ -181,7 +354,7 @@ async function requestChat(settings: NormalizedAiSettings, model: AiModelSetting
       authorization: `Bearer ${settings.apiKey}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ model: model.model, messages }),
+    body: JSON.stringify({ model: model.model, messages, ...(options.tools ? { tools: options.tools, tool_choice: "auto" } : {}) }),
   });
   if (!response.ok) {
     throw new Error(`AI 调用失败：${response.status} ${response.statusText}`);

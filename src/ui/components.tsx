@@ -32,6 +32,7 @@ export function Alert(props: { readonly type?: Tone; readonly message: ReactNode
 export function Checkbox(props: {
   readonly checked?: boolean;
   readonly disabled?: boolean;
+  readonly ariaLabel?: string;
   readonly onChange?: (checked: boolean) => void;
 }) {
   const checked = Boolean(props.checked);
@@ -41,6 +42,7 @@ export function Checkbox(props: {
       type="button"
       role="checkbox"
       aria-checked={checked}
+      aria-label={props.ariaLabel}
       disabled={props.disabled}
       onClick={() => props.onChange?.(!checked)}
     >
@@ -56,6 +58,7 @@ export function Divider() {
 export function Switch(props: {
   readonly checked?: boolean;
   readonly disabled?: boolean;
+  readonly ariaLabel?: string;
   readonly onChange?: (checked: boolean) => void;
 }) {
   return (
@@ -64,6 +67,7 @@ export function Switch(props: {
       type="button"
       role="switch"
       aria-checked={Boolean(props.checked)}
+      aria-label={props.ariaLabel}
       disabled={props.disabled}
       onClick={() => props.onChange?.(!props.checked)}
     >

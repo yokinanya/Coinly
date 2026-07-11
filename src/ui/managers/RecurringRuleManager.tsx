@@ -57,7 +57,7 @@ export function RecurringRuleManager({ data, setData, setMessage }: ManagerProps
         <div className="py-0.5">
           <TextAreaField label="备注" value={draft.transaction.note} onChange={(note) => setDraft({ ...draft, transaction: { ...draft.transaction, note } })} />
         </div>
-        <label className="flex items-center gap-2 pt-2 text-sm"><Switch checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />启用</label>
+        <label className="flex items-center gap-2 pt-2 text-sm"><Switch ariaLabel="启用订阅规则" checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />启用</label>
       </ManagerDialog>
       <ConfirmDialog open={Boolean(pending)} title="确认删除" description={pending ? `确认删除“${pending.name}”？已生成的历史交易不会被删除。` : ""} onCancel={() => setPending(undefined)} onConfirm={remove} />
     </section>

@@ -22,6 +22,8 @@ npm run dev
 
 开发服务默认由 Vite 启动。OneDrive、Google Drive 和 WebDAV 代理配置见 [docs/OAUTH.md](docs/OAUTH.md) 和 [proxy/webdav/README.md](proxy/webdav/README.md)。
 
+界面设计令牌、导航结构、页面模板和响应式验收标准见 [docs/UI_DESIGN.md](docs/UI_DESIGN.md)。
+
 ## 发布检查
 
 每次发布前必须通过：
@@ -32,7 +34,7 @@ npm run lint
 npm run test
 ```
 
-还需要手工检查桌面端和移动端主要页面、数据管理、信用卡账期、同步冲突处理、二维码导入导出和真实云端同步流程。详细验收标准见 [plan/DESIGN.md](plan/DESIGN.md)。
+还需要手工检查桌面端和移动端主要页面、数据管理、信用卡账期、同步冲突处理、二维码导入导出和真实云端同步流程。详细验收标准见 [docs/UI_DESIGN.md](docs/UI_DESIGN.md)。
 
 ## 环境变量
 

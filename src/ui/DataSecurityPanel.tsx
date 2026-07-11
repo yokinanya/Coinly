@@ -81,7 +81,7 @@ function KeyChangeModal(props: {
         <TextField label="新账本口令" type="password" value={passphrase} onChange={setPassphrase} />
         <TextField label="确认账本口令" type="password" value={confirm} onChange={setConfirm} />
         <label className="flex min-h-10 items-center gap-2 text-sm">
-          <Switch checked={rememberDevice} onChange={setRememberDevice} />
+          <Switch ariaLabel="记住本设备" checked={rememberDevice} onChange={setRememberDevice} />
           自动解锁
         </label>
       </div>

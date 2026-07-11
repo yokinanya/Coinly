@@ -39,6 +39,7 @@ export function App() {
   const saveTokenRef = useRef<SaveToken>({ version: 0 });
   const [saveToken, setSaveToken] = useState<SaveToken>({ version: 0 });
   const [viewId, setViewId] = useState<ViewId>(() => viewFromPath(window.location.pathname));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [syncResolution, setSyncResolution] = useState<SyncResolution>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "info", text: "正在加载本地账本" });
   const syncTimerRef = useRef<number | undefined>(undefined);
@@ -109,16 +110,19 @@ export function App() {
   return (
     <div className="app-shell min-h-svh md:min-h-screen">
       <div className="app-bg" aria-hidden="true" />
+      <a className="skip-link" href="#main-content">跳到主内容</a>
       <NavigationSidebar
         viewId={viewId}
         setViewId={setViewId}
+        collapsed={sidebarCollapsed}
         theme={data.uiSettings?.theme ?? "system"}
         syncDisabled={!hasEnabledSyncTarget(data.syncSettings)}
         syncing={manualSyncing}
         onThemeChange={(theme) => setVaultData(bumpVersion({ ...data, uiSettings: { ...data.uiSettings, theme } }))}
+        onCollapsedChange={setSidebarCollapsed}
         onSync={() => runManualSync({ data, syncingRef, setSyncing: setManualSyncing, setData: setVaultData, setResolution: setSyncResolution, setMessage: showAppMessage })}
       />
-      <main className="w-full px-4 pb-[calc(var(--safe-bottom)+5.5rem)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-4 md:ml-60 md:w-[calc(100%-15rem)] md:px-8 md:pb-8 md:pt-[calc(1.25rem+var(--safe-top))]">
+      <main id="main-content" tabIndex={-1} className={`w-full px-4 pb-[calc(var(--safe-bottom)+5.5rem)] pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-[calc(1rem+var(--safe-top))] md:px-8 md:pb-8 md:pt-[calc(1.25rem+var(--safe-top))] ${sidebarCollapsed ? "md:ml-16 md:w-[calc(100%-4rem)]" : "md:ml-60 md:w-[calc(100%-15rem)]"}`}>
         <div className="mx-auto w-full max-w-7xl space-y-4">
           {shouldShowStatus(status) && <StatusBar status={status} />}
           <Suspense fallback={<StatusBar status={{ tone: "info", text: "正在加载页面" }} />}>

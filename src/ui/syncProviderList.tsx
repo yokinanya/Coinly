@@ -174,7 +174,7 @@ function ProviderActions(props: {
   return (
     <span className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:shrink-0 sm:flex-nowrap">
       <label className="mr-auto flex items-center gap-2 text-xs text-(--color-text-secondary) sm:mr-0">
-        <Switch checked={props.target.enabled} onChange={props.toggleEnabled} disabled={disabled} />
+        <Switch ariaLabel={`${props.target.name || props.target.provider}自动同步`} checked={props.target.enabled} onChange={props.toggleEnabled} disabled={disabled} />
         自动同步
       </label>
       <Button aria-label="配置" title="配置" disabled={disabled} onClick={props.edit}><Settings2 size={16} /></Button>

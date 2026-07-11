@@ -5,7 +5,7 @@
   "start_url": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui", "browser"],
-  "background_color": "#f8fafc",
+  "background_color": "#f4f8f6",
   "theme_color": "#0f766e",
   "icons": [
     {

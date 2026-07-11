@@ -1,9 +1,9 @@
 import { memo, useMemo, useState } from "react";
-import { Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Pencil, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { AppData, Transaction } from "../domain/types";
 import { dateOnly, money } from "./format";
 import { TRANSACTION_KIND_LABELS } from "./labels";
-import { Button, Checkbox, Select } from "./components";
+import { Button, Checkbox, Input, Select } from "./components";
 import { EmptyState } from "./common";
 import { visibleSelectedIds } from "./transactionSelection";
 
@@ -23,42 +23,82 @@ interface TransactionTableProps {
 }
 
 interface Filters {
+  readonly query: string;
   readonly currency: string;
   readonly accountId: string;
   readonly categoryId: string;
+  readonly tagId: string;
   readonly kind: string;
 }
 
 export function TransactionTable(props: TransactionTableProps) {
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [page, setPage] = useState(1);
-  const rows = useMemo(() => filteredRows(sortByOccurredAt(props.transactions), filters), [filters, props.transactions]);
+  const [filters, setFilters] = useState<Filters>(() => filtersFromUrl(window.location.search));
+  const [pageSize, setPageSize] = useState(() => pageSizeFromUrl(window.location.search));
+  const [page, setPage] = useState(() => pageFromUrl(window.location.search));
+  const [advancedOpen, setAdvancedOpen] = useState(() => hasAdvancedFilters(filtersFromUrl(window.location.search)));
+  const rows = useMemo(() => filteredRows(sortByOccurredAt(props.transactions), filters, props.accounts, props.categories), [filters, props.accounts, props.categories, props.transactions]);
   const pageRows = useMemo(() => currentPageRows(rows, page, pageSize), [page, pageSize, rows]);
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
   const activeFilters = hasActiveFilters(filters);
+  const applyFilters = (value: Filters) => updateFilters(value, setFilters, setPage, props, pageSize);
+  const changePage = (value: number) => {
+    setPage(value);
+    syncTableUrl(filters, value, pageSize);
+  };
+  const changePageSize = (value: number) => {
+    setPageSize(value);
+    setPage(1);
+    syncTableUrl(filters, 1, value);
+  };
   return (
     <div className="panel overflow-hidden">
-      <TableFilters data={props.data} filters={filters} setFilters={(value) => updateFilters(value, setFilters, setPage, props, rows)} />
-      <RowsTable {...props} rows={pageRows} emptyAction={activeFilters ? { label: "清空筛选", onClick: () => clearFilters(setFilters, setPage, props.setSelectedIds) } : undefined} />
-      <TablePager page={page} pages={pages} pageSize={pageSize} total={rows.length} setPage={setPage} setPageSize={setPageSize} />
+      <TableFilters data={props.data} filters={filters} advancedOpen={advancedOpen} setAdvancedOpen={setAdvancedOpen} setFilters={applyFilters} />
+      <RowsTable {...props} rows={pageRows} emptyAction={activeFilters ? { label: "清空筛选", onClick: () => clearFilters(setFilters, setPage, props.setSelectedIds, pageSize) } : undefined} />
+      <TablePager page={page} pages={pages} pageSize={pageSize} total={rows.length} setPage={changePage} setPageSize={changePageSize} />
     </div>
   );
 }
 
-const EMPTY_FILTERS: Filters = { currency: "", accountId: "", categoryId: "", kind: "" };
+const EMPTY_FILTERS: Filters = { query: "", currency: "", accountId: "", categoryId: "", tagId: "", kind: "" };
 
 function TableFilters(props: {
   readonly data: AppData;
   readonly filters: Filters;
+  readonly advancedOpen: boolean;
+  readonly setAdvancedOpen: (open: boolean) => void;
   readonly setFilters: (filters: Filters) => void;
 }) {
+  const advancedCount = advancedFilterCount(props.filters);
   return (
-    <div className="grid gap-2 border-b border-(--color-border) p-3 sm:grid-cols-4">
-      <Select value={props.filters.currency} options={currencyOptions(props.data)} onChange={(value) => props.setFilters({ ...props.filters, currency: String(value) })} />
-      <Select value={props.filters.accountId} options={entityOptions(props.data.accounts, "全部账户")} onChange={(value) => props.setFilters({ ...props.filters, accountId: String(value) })} />
-      <Select value={props.filters.categoryId} options={entityOptions(props.data.categories, "全部分类")} onChange={(value) => props.setFilters({ ...props.filters, categoryId: String(value) })} />
-      <Select value={props.filters.kind} options={kindOptions()} onChange={(value) => props.setFilters({ ...props.filters, kind: String(value) })} />
+    <div className="space-y-3 border-b border-(--color-border) p-3">
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <Input name="transaction-search" autoComplete="off" value={props.filters.query} placeholder="搜索备注、账户、分类、金额…" aria-label="搜索交易" onChange={(query) => props.setFilters({ ...props.filters, query: String(query) })} />
+        <Button aria-expanded={props.advancedOpen} aria-controls="transaction-advanced-filters" onClick={() => props.setAdvancedOpen(!props.advancedOpen)}>
+          <SlidersHorizontal size={16} aria-hidden="true" />筛选{advancedCount > 0 ? ` ${advancedCount}` : ""}
+        </Button>
+      </div>
+      {props.advancedOpen && (
+        <div id="transaction-advanced-filters" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <Select aria-label="按币种筛选" value={props.filters.currency} options={currencyOptions(props.data)} onChange={(value) => props.setFilters({ ...props.filters, currency: String(value) })} />
+          <Select aria-label="按账户筛选" value={props.filters.accountId} options={entityOptions(props.data.accounts, "全部账户")} onChange={(value) => props.setFilters({ ...props.filters, accountId: String(value) })} />
+          <Select aria-label="按分类筛选" value={props.filters.categoryId} options={entityOptions(props.data.categories, "全部分类")} onChange={(value) => props.setFilters({ ...props.filters, categoryId: String(value) })} />
+          <Select aria-label="按标签筛选" value={props.filters.tagId} options={entityOptions(props.data.tags, "全部标签")} onChange={(value) => props.setFilters({ ...props.filters, tagId: String(value) })} />
+          <Select aria-label="按类型筛选" value={props.filters.kind} options={kindOptions()} onChange={(value) => props.setFilters({ ...props.filters, kind: String(value) })} />
+        </div>
+      )}
+      <FilterSummary data={props.data} filters={props.filters} clear={() => props.setFilters(EMPTY_FILTERS)} />
+    </div>
+  );
+}
+
+function FilterSummary(props: { readonly data: AppData; readonly filters: Filters; readonly clear: () => void }) {
+  const labels = activeFilterLabels(props.data, props.filters);
+  if (labels.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-(--color-text-secondary)">
+      <span>正在筛选</span>
+      {labels.map((label) => <span key={label} className="rounded bg-(--color-surface-muted) px-2 py-1 text-(--color-text)">{label}</span>)}
+      <Button className="min-h-8 px-2 text-xs" variant="ghost" onClick={props.clear}>清空</Button>
     </div>
   );
 }
@@ -103,7 +143,7 @@ const TransactionRow = memo(function TransactionRow(props: TransactionTableProps
   const selected = props.selectedIds.includes(row.id);
   return (
     <tr className={`border-t border-(--color-border) transition hover:bg-(--color-surface-muted) ${selected ? "bg-(--color-accent-soft)" : ""}`}>
-      <td className="px-3 py-2"><Checkbox checked={selected} onChange={(checked) => toggleOne(props.selectedIds, row.id, checked, props.setSelectedIds)} /></td>
+      <td className="px-3 py-2"><Checkbox ariaLabel={`选择交易 ${row.note || TRANSACTION_KIND_LABELS[row.kind]}`} checked={selected} onChange={(checked) => toggleOne(props.selectedIds, row.id, checked, props.setSelectedIds)} /></td>
       <td className="px-3 py-2">{dateOnly(row.occurredAt)}</td>
       <td className="px-3 py-2 tabular-nums">{money(row.amount, row.currency)}</td>
       <td className="px-3 py-2">{props.accounts[row.accountId] ?? "-"}</td>
@@ -123,7 +163,7 @@ const TransactionCard = memo(function TransactionCard(props: TransactionTablePro
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
-            <Checkbox checked={selected} onChange={(checked) => toggleOne(props.selectedIds, row.id, checked, props.setSelectedIds)} />
+            <Checkbox ariaLabel={`选择交易 ${row.note || TRANSACTION_KIND_LABELS[row.kind]}`} checked={selected} onChange={(checked) => toggleOne(props.selectedIds, row.id, checked, props.setSelectedIds)} />
             <span className="min-w-0 truncate text-xs text-(--color-text-secondary)">{dateOnly(row.occurredAt)} · {TRANSACTION_KIND_LABELS[row.kind]}</span>
           </div>
           <div className="mt-2 line-clamp-2 wrap-break-word text-sm font-medium" title={row.note || undefined}>{row.note || "无备注"}</div>
@@ -203,41 +243,127 @@ function updateFilters(
   setFilters: (filters: Filters) => void,
   setPage: (page: number) => void,
   props: TransactionTableProps,
-  currentRows: readonly Transaction[],
+  pageSize: number,
 ): void {
+  const nextRows = filteredRows(sortByOccurredAt(props.transactions), filters, props.accounts, props.categories);
   setFilters(filters);
   setPage(1);
-  props.setSelectedIds(visibleSelectedIds(props.selectedIds, currentRows));
+  props.setSelectedIds(visibleSelectedIds(props.selectedIds, nextRows));
+  syncTableUrl(filters, 1, pageSize);
 }
 
-function clearFilters(setFilters: (filters: Filters) => void, setPage: (page: number) => void, setSelectedIds: (ids: readonly string[]) => void): void {
+function clearFilters(setFilters: (filters: Filters) => void, setPage: (page: number) => void, setSelectedIds: (ids: readonly string[]) => void, pageSize: number): void {
   setFilters(EMPTY_FILTERS);
   setPage(1);
   setSelectedIds([]);
+  syncTableUrl(EMPTY_FILTERS, 1, pageSize);
 }
 
 function hasActiveFilters(filters: Filters): boolean {
-  return Boolean(filters.currency || filters.accountId || filters.categoryId || filters.kind);
+  return Boolean(filters.query.trim() || hasAdvancedFilters(filters));
+}
+
+function hasAdvancedFilters(filters: Filters): boolean {
+  return advancedFilterCount(filters) > 0;
+}
+
+function advancedFilterCount(filters: Filters): number {
+  return [filters.currency, filters.accountId, filters.categoryId, filters.tagId, filters.kind].filter(Boolean).length;
 }
 
 function sortByOccurredAt(transactions: readonly Transaction[]): readonly Transaction[] {
   return [...transactions].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.createdAt.localeCompare(left.createdAt));
 }
 
-function filteredRows(rows: readonly Transaction[], filters: Filters): readonly Transaction[] {
-  return rows.filter((row) => matches(row, filters));
+function filteredRows(rows: readonly Transaction[], filters: Filters, accounts: Record<string, string>, categories: Record<string, string>): readonly Transaction[] {
+  return rows.filter((row) => matches(row, filters, accounts, categories));
 }
 
-function matches(row: Transaction, filters: Filters): boolean {
+function matches(row: Transaction, filters: Filters, accounts: Record<string, string>, categories: Record<string, string>): boolean {
   if (filters.currency && row.currency !== filters.currency) return false;
   if (filters.accountId && row.accountId !== filters.accountId) return false;
   if (filters.categoryId && row.categoryId !== filters.categoryId) return false;
+  if (filters.tagId && !row.tagIds.includes(filters.tagId)) return false;
   if (filters.kind && row.kind !== filters.kind) return false;
+  if (!matchesQuery(row, filters.query, accounts, categories)) return false;
   return true;
+}
+
+function matchesQuery(row: Transaction, query: string, accounts: Record<string, string>, categories: Record<string, string>): boolean {
+  const normalized = normalizeSearch(query);
+  if (!normalized) return true;
+  return [
+    row.note,
+    accounts[row.accountId] ?? "",
+    categories[row.categoryId ?? ""] ?? "",
+    row.amount.toString(),
+    row.currency,
+    TRANSACTION_KIND_LABELS[row.kind],
+    row.occurredAt,
+  ].some((value) => normalizeSearch(value).includes(normalized));
+}
+
+function activeFilterLabels(data: AppData, filters: Filters): readonly string[] {
+  const labels: string[] = [];
+  if (filters.query.trim()) labels.push(`搜索：${filters.query.trim()}`);
+  if (filters.currency) labels.push(`币种：${filters.currency}`);
+  if (filters.accountId) labels.push(`账户：${data.accounts.find((item) => item.id === filters.accountId)?.name ?? filters.accountId}`);
+  if (filters.categoryId) labels.push(`分类：${data.categories.find((item) => item.id === filters.categoryId)?.name ?? filters.categoryId}`);
+  if (filters.tagId) labels.push(`标签：${data.tags.find((item) => item.id === filters.tagId)?.name ?? filters.tagId}`);
+  if (filters.kind) labels.push(`类型：${TRANSACTION_KIND_LABELS[filters.kind as keyof typeof TRANSACTION_KIND_LABELS] ?? filters.kind}`);
+  return labels;
+}
+
+function normalizeSearch(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function currentPageRows(rows: readonly Transaction[], page: number, pageSize: number): readonly Transaction[] {
   return rows.slice((page - 1) * pageSize, page * pageSize);
+}
+
+function filtersFromUrl(search: string): Filters {
+  const params = new URLSearchParams(search);
+  return {
+    query: params.get("q") ?? "",
+    currency: params.get("currency") ?? "",
+    accountId: params.get("accountId") ?? "",
+    categoryId: params.get("categoryId") ?? "",
+    tagId: params.get("tagId") ?? "",
+    kind: params.get("kind") ?? "",
+  };
+}
+
+function pageFromUrl(search: string): number {
+  return positiveInteger(new URLSearchParams(search).get("page"), 1);
+}
+
+function pageSizeFromUrl(search: string): number {
+  const value = positiveInteger(new URLSearchParams(search).get("pageSize"), DEFAULT_PAGE_SIZE);
+  return PAGE_SIZE_OPTIONS.includes(value as (typeof PAGE_SIZE_OPTIONS)[number]) ? value : DEFAULT_PAGE_SIZE;
+}
+
+function positiveInteger(value: string | null, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function syncTableUrl(filters: Filters, page: number, pageSize: number): void {
+  const params = new URLSearchParams();
+  setParam(params, "q", filters.query.trim());
+  setParam(params, "currency", filters.currency);
+  setParam(params, "accountId", filters.accountId);
+  setParam(params, "categoryId", filters.categoryId);
+  setParam(params, "tagId", filters.tagId);
+  setParam(params, "kind", filters.kind);
+  if (page > 1) params.set("page", String(page));
+  if (pageSize !== DEFAULT_PAGE_SIZE) params.set("pageSize", String(pageSize));
+  const query = params.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+}
+
+function setParam(params: URLSearchParams, key: string, value: string): void {
+  if (value) params.set(key, value);
 }
 
 function toggleOne(selectedIds: readonly string[], id: string, checked: boolean, setSelectedIds: (ids: readonly string[]) => void): void {

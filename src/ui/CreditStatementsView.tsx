@@ -1,4 +1,4 @@
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, List, ReceiptText } from "lucide-react";
 import { useMemo, useState } from "react";
 import { createCombinedStatementForAccounts, createStatementForAccount } from "../domain/operations";
 import { accountCurrencyOptions } from "../domain/recurring";
@@ -11,6 +11,7 @@ import { money } from "./format";
 import { Button, Drawer, Select } from "./components";
 import { AnimatedRow } from "./managers/ManagerCommon";
 import { useAutoDismissStatus } from "./useAutoDismissMessage";
+import { VIEW_PATHS } from "./appRoutes";
 
 const DETAIL_DRAWER_WIDTH = 520;
 const SETTLEMENT_DRAWER_WIDTH = 440;
@@ -85,8 +86,8 @@ export function CreditStatementsView(props: {
           <h1 className="text-lg font-semibold text-(--color-text)">信用卡账期</h1>
           <p className="mt-1 text-sm text-(--color-text-secondary)">生成、查看并结算信用卡账期。</p>
         </div>
-        <Button onClick={props.onBack}>返回明细</Button>
       </div>
+      <StatementSectionSwitch onTransactions={props.onBack} />
       <StatementStatusMessage status={status} />
       <StatementActions
         creatingAccountId={creatingAccountId}
@@ -107,6 +108,19 @@ export function CreditStatementsView(props: {
       />
       {creditAccounts.length === 0 && <EmptyState action={props.onNavigate ? { label: "去账户", onClick: () => props.onNavigate?.("accounts") } : undefined}>暂无信用卡账户。</EmptyState>}
     </section>
+  );
+}
+
+function StatementSectionSwitch(props: { readonly onTransactions: () => void }) {
+  return (
+    <div className="inline-flex w-full gap-1 overflow-x-auto rounded-md border border-(--color-border) bg-(--color-surface) p-1 sm:w-auto">
+      <a className="ui-button shrink-0 border-transparent text-(--color-text) hover:bg-(--color-surface-muted)" href={VIEW_PATHS.transactions} onClick={(event) => { event.preventDefault(); props.onTransactions(); }}>
+        <List size={16} />全部交易
+      </a>
+      <a className="ui-button shrink-0 border-(--color-accent) bg-(--color-accent-soft) text-(--color-accent)" href={VIEW_PATHS.statements} aria-current="page">
+        <ReceiptText size={16} />信用卡账期
+      </a>
+    </div>
   );
 }
 

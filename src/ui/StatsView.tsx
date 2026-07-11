@@ -102,11 +102,11 @@ function TrendChart(props: { readonly group: TrendGroup; readonly mode: TrendMod
       >
         <GridLines />
         {stackedIncomeArea && <path d={stackedIncomeArea} fill="color-mix(in srgb, var(--color-success) 18%, transparent)" />}
-        {stackedExpenseArea && <path d={stackedExpenseArea} fill="color-mix(in srgb, var(--color-error) 14%, transparent)" />}
+        {stackedExpenseArea && <path d={stackedExpenseArea} fill="color-mix(in srgb, var(--color-coral) 14%, transparent)" />}
         {incomeLine && <path d={incomeLine} fill="none" stroke="var(--color-success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />}
-        {expenseLine && <path d={expenseLine} fill="none" stroke="var(--color-error)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />}
+        {expenseLine && <path d={expenseLine} fill="none" stroke="var(--color-coral)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />}
         {props.mode !== "expense" && incomePoints.map((point, index) => <circle key={`income-${props.group.currency}-${point.label}`} cx={point.x} cy={point.y} r="3.5" fill="var(--color-success)" aria-label={`${point.label} 收入 ${money(points[index]?.income ?? 0, props.group.currency)}`} />)}
-        {props.mode !== "income" && expensePoints.map((point, index) => <circle key={`expense-${props.group.currency}-${point.label}`} cx={point.x} cy={point.y} r="3.5" fill="var(--color-error)" aria-label={`${point.label} 支出 ${money(points[index]?.expense ?? 0, props.group.currency)}`} />)}
+        {props.mode !== "income" && expensePoints.map((point, index) => <circle key={`expense-${props.group.currency}-${point.label}`} cx={point.x} cy={point.y} r="3.5" fill="var(--color-coral)" aria-label={`${point.label} 支出 ${money(points[index]?.expense ?? 0, props.group.currency)}`} />)}
         {hoverX !== undefined && <line x1={hoverX} y1={CHART_TOP} x2={hoverX} y2={CHART_BASELINE} stroke="var(--color-text-secondary)" strokeDasharray="4 4" strokeWidth="1" />}
         {incomePoints.map((point) => <text key={`label-${props.group.currency}-${point.label}`} x={point.x} y="170" textAnchor="middle" className="fill-(--color-text-secondary) text-[10px]">{point.label.slice(5)}</text>)}
       </svg>
@@ -121,7 +121,7 @@ function TrendChart(props: { readonly group: TrendGroup; readonly mode: TrendMod
 }
 
 function Legend(props: { readonly tone: "success" | "danger"; readonly label: string }) {
-  return <span className="inline-flex items-center gap-1"><span className={`h-2.5 w-2.5 rounded-full ${props.tone === "success" ? "bg-(--color-success)" : "bg-(--color-error)"}`} />{props.label}</span>;
+  return <span className="inline-flex items-center gap-1"><span className={`h-2.5 w-2.5 rounded-full ${props.tone === "success" ? "bg-(--color-success)" : "bg-(--color-coral)"}`} />{props.label}</span>;
 }
 
 function TrendModeButton(props: { readonly active: boolean; readonly onClick: () => void; readonly children: string }) {
@@ -134,7 +134,7 @@ function TrendTooltip(props: { readonly currency: CurrencyCode; readonly mode: T
     <div className="pointer-events-none absolute top-2 -translate-x-1/2 rounded-md border border-(--color-border) bg-(--color-surface) px-3 py-2 text-xs shadow-sm" style={{ left: `${left}%` }}>
       <div className="font-medium text-(--color-text)">{props.point.month}</div>
       {props.mode !== "expense" && <div className="text-(--color-success)">收入：{money(props.point.income, props.currency)}</div>}
-      {props.mode !== "income" && <div className="text-(--color-error)">支出：{money(props.point.expense, props.currency)}</div>}
+      {props.mode !== "income" && <div className="text-(--color-coral)">支出：{money(props.point.expense, props.currency)}</div>}
     </div>
   );
 }
@@ -143,7 +143,7 @@ function MetricCard(props: { readonly label: string; readonly value: string; rea
   return (
     <div className="rounded-md bg-(--color-surface-muted) px-3 py-2">
       <div className="text-xs text-(--color-text-secondary)">{props.label}</div>
-      <div className={props.tone === "success" ? "font-semibold text-(--color-success)" : "font-semibold text-(--color-error)"}>{props.value}</div>
+      <div className={props.tone === "success" ? "font-semibold text-(--color-success)" : "font-semibold text-(--color-coral)"}>{props.value}</div>
     </div>
   );
 }
@@ -235,7 +235,7 @@ function RankButton(props: {
       </span>
       <span className="grid grid-cols-[minmax(0,1fr)_3rem] items-center gap-3">
         <span className="h-2 overflow-hidden rounded bg-(--color-surface-muted)">
-          <span className="block h-full rounded bg-(--color-error) transition-[width] duration-300" style={{ width }} />
+          <span className="block h-full rounded bg-(--color-coral) transition-[width] duration-300" style={{ width }} />
         </span>
         <span className="text-right text-xs tabular-nums text-(--color-text-secondary)">{percent}%</span>
       </span>

@@ -1,4 +1,4 @@
-import { Camera, ImageUp, Lock, ShieldCheck, Upload as UploadIcon, X } from "lucide-react";
+import { Camera, ChevronDown, ImageUp, Lock, ShieldCheck, Upload as UploadIcon, X } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { StoredVaultState } from "../storage/indexedDb";
 import type { StatusMessage } from "./common";
@@ -29,6 +29,7 @@ export function VaultGate(props: {
   const [fullDataFile, setFullDataFile] = useState<SyncSettingsFile>();
   const [fileError, setFileError] = useState("");
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const mode = gateMode(props.state);
   const submit = () => {
@@ -41,29 +42,50 @@ export function VaultGate(props: {
     }).finally(() => setSubmitting(false));
   };
   return (
-    <main className="grid min-h-screen place-items-center bg-(--color-background) px-4 py-8 text-(--color-text)">
-      <section className="w-full max-w-md space-y-5 rounded-lg border border-(--color-border) bg-(--color-surface) p-5 shadow-sm">
+    <main className="gate-shell grid min-h-svh place-items-center overflow-hidden px-4 py-8 text-(--color-text)">
+      <form
+        className="panel relative w-full max-w-md space-y-5 overflow-hidden p-5 sm:p-6"
+        aria-labelledby="vault-gate-title"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
         <GateHeader mode={mode} />
-        {props.status.text && <p className={`text-sm ${props.status.tone === "error" ? "text-red-600" : "text-(--color-text-secondary)"}`}>{props.status.text}</p>}
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <PasswordField value={passphrase} onChange={setPassphrase} />
-          {mode === "create" && (
-            <SyncSettingsImportPicker
-              file={syncSettingsFile}
-              fullDataFile={fullDataFile}
-              fileError={fileError}
-              openQrScanner={() => setQrScannerOpen(true)}
-              clear={() => clearSyncSettingsFile(setSyncSettingsFile, setFileError)}
-              clearFullData={() => clearSyncSettingsFile(setFullDataFile, setFileError)}
-              select={(file) => selectSyncSettingsFile(file, setSyncSettingsFile, setFileError)}
-              selectFullData={(file) => selectSyncSettingsFile(file, setFullDataFile, setFileError)}
-              selectQrImage={(file) => selectSyncSettingsQrImage(file, setSyncSettingsFile, setFileError)}
-            />
+        {props.status.text && (
+          <p
+            className={`rounded-md px-3 py-2 text-sm ${props.status.tone === "error" ? "bg-(--color-error-soft) text-(--color-error)" : "bg-(--color-surface-muted) text-(--color-text-secondary)"}`}
+            role={props.status.tone === "error" ? "alert" : "status"}
+            aria-live={props.status.tone === "error" ? "assertive" : "polite"}
+          >
+            {props.status.text}
+          </p>
+        )}
+        <div className="grid gap-4">
+          <PasswordField mode={mode} value={passphrase} onChange={setPassphrase} />
+          {mode === "create" && <RecoverySection open={recoveryOpen} toggle={() => setRecoveryOpen((value) => !value)} />}
+          {mode === "create" && recoveryOpen && (
+            <div id="vault-recovery-options" className="row-card space-y-3 bg-(--color-surface) p-3">
+              <p className="text-sm text-(--color-text-secondary)">可导入完整账本，或恢复同步源配置。</p>
+              <SyncSettingsImportPicker
+                file={syncSettingsFile}
+                fullDataFile={fullDataFile}
+                fileError={fileError}
+                openQrScanner={() => setQrScannerOpen(true)}
+                clear={() => clearSyncSettingsFile(setSyncSettingsFile, setFileError)}
+                clearFullData={() => clearSyncSettingsFile(setFullDataFile, setFileError)}
+                select={(file) => selectSyncSettingsFile(file, setSyncSettingsFile, setFileError)}
+                selectFullData={(file) => selectSyncSettingsFile(file, setFullDataFile, setFileError)}
+                selectQrImage={(file) => selectSyncSettingsQrImage(file, setSyncSettingsFile, setFileError)}
+              />
+            </div>
           )}
+          <div className="flex flex-col gap-3 border-t border-(--color-border) pt-4 sm:flex-row sm:items-center sm:justify-between">
           <RememberPassphrase checked={rememberDevice} onChange={setRememberDevice} />
-          <Button className="w-full sm:w-auto" variant="primary" disabled={syncSettingsFile?.loading || fullDataFile?.loading} loading={submitting} onClick={submit}>
-            {submitLabel(mode, syncSettingsFile, fullDataFile)}
-          </Button>
+            <Button className="w-full sm:w-auto" variant="primary" htmlType="submit" disabled={syncSettingsFile?.loading || fullDataFile?.loading} loading={submitting}>
+              {submitLabel(mode, syncSettingsFile, fullDataFile)}
+            </Button>
+          </div>
         </div>
         {mode === "create" && (
           <SyncSettingsQrScanner
@@ -73,7 +95,7 @@ export function VaultGate(props: {
             setError={setFileError}
           />
         )}
-      </section>
+      </form>
     </main>
   );
 }
@@ -85,7 +107,7 @@ function GateHeader({ mode }: { readonly mode: VaultMode }) {
         {mode === "unlock" ? <Lock size={20} /> : <ShieldCheck size={20} />}
       </span>
       <div>
-        <h1 className="text-lg font-semibold">{modeTitle(mode)}</h1>
+        <h1 id="vault-gate-title" className="text-xl font-semibold text-balance">{modeTitle(mode)}</h1>
         <p className="text-sm text-(--color-text-secondary)">{modeDescription(mode)}</p>
       </div>
     </div>
@@ -93,14 +115,38 @@ function GateHeader({ mode }: { readonly mode: VaultMode }) {
 }
 
 function PasswordField(props: {
+  readonly mode: VaultMode;
   readonly value: string;
   readonly onChange: (value: string) => void;
 }) {
   return (
     <label className="block w-full sm:col-span-2">
       <span className="label">账本口令</span>
-      <Input className="mt-2 w-full" type="password" value={props.value} onChange={(value) => props.onChange(String(value))} />
+      <Input
+        className="mt-2 w-full"
+        type="password"
+        name="passphrase"
+        autoComplete={props.mode === "unlock" ? "current-password" : "new-password"}
+        required
+        value={props.value}
+        onChange={(value) => props.onChange(String(value))}
+      />
     </label>
+  );
+}
+
+function RecoverySection(props: { readonly open: boolean; readonly toggle: () => void }) {
+  return (
+    <button
+      className="flex min-h-10 w-full items-center justify-between gap-3 rounded-md px-1 text-left text-sm font-medium text-(--color-text-secondary) hover:text-(--color-text)"
+      type="button"
+      aria-expanded={props.open}
+      aria-controls="vault-recovery-options"
+      onClick={props.toggle}
+    >
+      <span>从备份恢复</span>
+      <ChevronDown className={`transition-transform ${props.open ? "rotate-180" : ""}`} size={17} aria-hidden="true" />
+    </button>
   );
 }
 
@@ -116,7 +162,7 @@ function SyncSettingsImportPicker(props: {
   readonly selectQrImage: (file: File) => string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Upload accept="application/json" beforeUpload={props.selectFullData} maxCount={1} showUploadList={false}>
         <Button aria-label="导入全量数据文件" title="导入全量数据文件"><UploadIcon size={16} />全量数据</Button>
       </Upload>
@@ -162,7 +208,7 @@ function RememberPassphrase(props: {
 }) {
   return (
     <label className="flex min-h-10 items-center gap-2 text-sm">
-      <Switch checked={props.checked} onChange={props.onChange} />
+      <Switch ariaLabel="记住本设备" checked={props.checked} onChange={props.onChange} />
       记住本设备
     </label>
   );

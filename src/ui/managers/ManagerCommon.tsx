@@ -1,3 +1,4 @@
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 import type { AppData } from "../../domain/types";
@@ -117,7 +118,7 @@ export function AnimatedRow({ children }: { readonly children: ReactNode }) {
 }
 
 export function NewButton(props: { readonly onClick: () => void }) {
-  return <Button variant="primary" onClick={props.onClick}>新建</Button>;
+  return <Button variant="primary" onClick={props.onClick}><Plus size={16} aria-hidden="true" />新建</Button>;
 }
 
 function EntityRow<T extends { readonly id: string; readonly name: string }>(props: {
@@ -126,11 +127,11 @@ function EntityRow<T extends { readonly id: string; readonly name: string }>(pro
   readonly onDelete: (item: T) => void;
 }) {
   return (
-    <div className="row-card flex items-center justify-between gap-3 p-2 text-sm">
-      <span>{props.item.name}</span>
-      <span className="flex gap-2">
-        <Button onClick={() => props.onEdit(props.item)}>编辑</Button>
-        <Button variant="danger" onClick={() => props.onDelete(props.item)}>删除</Button>
+    <div className="row-card flex min-h-12 items-center justify-between gap-3 bg-(--color-surface) px-3 py-2 text-sm">
+      <span className="min-w-0 truncate font-medium" title={props.item.name}>{props.item.name}</span>
+      <span className="flex shrink-0 gap-1">
+        <Button className="h-9 min-h-9 w-9 px-0" variant="ghost" aria-label={`编辑${props.item.name}`} title="编辑" onClick={() => props.onEdit(props.item)}><Pencil size={15} aria-hidden="true" /></Button>
+        <Button className="h-9 min-h-9 w-9 px-0" variant="ghost" aria-label={`删除${props.item.name}`} title="删除" onClick={() => props.onDelete(props.item)}><Trash2 size={15} aria-hidden="true" /></Button>
       </span>
     </div>
   );

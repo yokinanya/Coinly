@@ -76,6 +76,29 @@ describe("parseImage", () => {
 });
 
 describe("parseText", () => {
+  it("uses the active provider endpoint, API key, and model", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(sampleDraft()) } }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    const provider = createAiProvider({
+      provider: "openai-compatible",
+      endpoint: "",
+      apiKey: "",
+      providers: [
+        { id: "first", name: "First", protocol: "openai-compatible", endpoint: "https://first.example/v1", apiKey: "first-key", defaultModelId: "chat", models: [{ id: "chat", model: "first-model" }] },
+        { id: "second", name: "Second", protocol: "openai-compatible", endpoint: "https://second.example/v1", apiKey: "second-key", defaultModelId: "reasoning", models: [{ id: "reasoning", model: "second-model" }] },
+      ],
+      activeProviderId: "second",
+      activeModelId: "reasoning",
+    });
+
+    await provider.parseText("午餐 12.5", initialData());
+
+    expect(fetch).toHaveBeenCalledWith("https://second.example/v1/chat/completions", expect.objectContaining({
+      headers: expect.objectContaining({ authorization: "Bearer second-key" }),
+      body: expect.stringContaining('"model":"second-model"'),
+    }));
+  });
+
   it("rejects empty configured model names before sending a request", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
@@ -89,6 +112,41 @@ describe("parseText", () => {
 
     await expect(provider.parseText("午餐 12.5", initialData())).rejects.toThrow("配置 AI 模型");
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("ask", () => {
+  it("lets the model choose a read-only ledger tool before answering", async () => {
+    const requests: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (requests.length === 1) {
+        return new Response(JSON.stringify({
+          choices: [{ message: {
+            tool_calls: [{
+              id: "call-query",
+              type: "function",
+              function: { name: "query_ledger", arguments: JSON.stringify({ question: "本月餐饮花了多少？" }) },
+            }],
+          } }],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "本月餐饮支出为 38 CNY。" } }] }), { status: 200 });
+    }));
+    const provider = createAiProvider({
+      provider: "openai-compatible",
+      endpoint: "https://api.example/v1",
+      apiKey: "key",
+      textModel: { model: "tool-model" },
+      visionModel: { model: "vision-model", supportsVision: true },
+    });
+
+    await expect(provider.ask("本月餐饮花了多少？", initialData())).resolves.toEqual({ answer: "本月餐饮支出为 38 CNY。", transactionDrafts: [] });
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toMatchObject({ model: "tool-model", tool_choice: "auto" });
+    expect(requests[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: "query_ledger" }) })]));
+    expect(requests[1]?.messages).toEqual(expect.arrayContaining([expect.objectContaining({ role: "tool", tool_call_id: "call-query" })]));
   });
 });
 

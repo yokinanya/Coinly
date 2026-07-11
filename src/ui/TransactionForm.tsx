@@ -22,7 +22,7 @@ export function TransactionForm(props: {
   readonly submitting?: boolean;
 }) {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const formRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const update = (patch: Partial<TransactionDraft>) => props.onChange({ ...props.draft, ...patch });
   const updateField = (field: TransactionFieldName, patch: Partial<TransactionDraft>) => {
     setFieldErrors((current) => withoutError(current, field));
@@ -40,28 +40,65 @@ export function TransactionForm(props: {
   };
   const accountOptions = props.data.accounts.map((item) => option(item.id, `${item.name} · ${ACCOUNT_KIND_LABELS[item.kind]}`));
   const selectedAccount = props.data.accounts.find((item) => item.id === props.draft.accountId);
-  const className = props.embedded ? "grid gap-5 md:grid-cols-2" : "panel grid gap-4 p-4 md:grid-cols-2";
+  const className = props.embedded ? "grid gap-5 md:grid-cols-2" : "panel mx-auto grid max-w-3xl gap-5 p-4 sm:p-5 md:grid-cols-2";
   return (
-    <div ref={formRef} className={className}>
-      <SelectField label="类型" value={props.draft.kind} options={kindOptions()} onChange={(value) => changeKind(value as TransactionKind, props.data, props.draft, props.onChange, setFieldErrors)} />
-      <SelectField required fieldName="accountId" error={fieldErrors.accountId} label={accountLabel(props.draft.kind)} value={props.draft.accountId} options={accountOptions} onChange={(accountId) => changeAccount(accountId, props.data, props.draft, props.onChange, setFieldErrors)} />
-      <TextField required fieldName="amount" error={fieldErrors.amount} label="金额" type="number" inputMode="decimal" min={0} step="0.01" value={props.draft.amount} onChange={(amount) => updateField("amount", { amount: Number(amount) })} />
+    <form
+      ref={formRef}
+      className={className}
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <TransactionKindPicker value={props.draft.kind} onChange={(kind) => changeKind(kind, props.data, props.draft, props.onChange, setFieldErrors)} />
+      <TextField className="text-lg font-semibold tabular-nums" required fieldName="amount" error={fieldErrors.amount} label="金额" type="number" inputMode="decimal" min={0} step="0.01" value={props.draft.amount} onChange={(amount) => updateField("amount", { amount: Number(amount) })} />
       <SelectField required fieldName="currency" error={fieldErrors.currency} label="币种" value={props.draft.currency} options={currencyOptions(selectedAccount)} onChange={(currency) => updateField("currency", { currency: currency as CurrencyCode })} />
+      <SelectField required fieldName="accountId" error={fieldErrors.accountId} label={accountLabel(props.draft.kind)} value={props.draft.accountId} options={accountOptions} onChange={(accountId) => changeAccount(accountId, props.data, props.draft, props.onChange, setFieldErrors)} />
       {showsCategory(props.draft.kind) && <SelectField label="分类" value={props.draft.categoryId ?? ""} options={categoryOptions(props.data, props.draft.kind)} onChange={(categoryId) => update({ categoryId: categoryId || undefined })} />}
       {props.draft.kind === "transfer" && <TransferFields data={props.data} draft={props.draft} errors={fieldErrors} updateField={updateField} />}
       {props.draft.kind === "credit_payment" && <PaymentSourceField data={props.data} draft={props.draft} update={update} />}
       <DateField label="日期" value={props.draft.occurredAt} onChange={(occurredAt) => update({ occurredAt })} />
-      <TagPicker data={props.data} selected={props.draft.tagIds} onChange={(tagIds) => update({ tagIds })} />
-      <div className="md:col-span-2">
-        <TextAreaField label="备注" value={props.draft.note} onChange={(note) => update({ note })} />
-      </div>
+      <details className="group rounded-md border border-(--color-border) bg-(--color-surface-muted) md:col-span-2" open={Boolean(props.draft.tagIds.length || props.draft.note)}>
+        <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-(--color-text-secondary) marker:hidden">
+          标签与备注
+          <span className="float-right text-(--color-text-muted) group-open:rotate-180" aria-hidden="true">⌄</span>
+        </summary>
+        <div className="grid gap-4 border-t border-(--color-border) p-3">
+          <TagPicker data={props.data} selected={props.draft.tagIds} onChange={(tagIds) => update({ tagIds })} />
+          <TextAreaField label="备注" value={props.draft.note} onChange={(note) => update({ note })} />
+        </div>
+      </details>
       {!props.embedded && (
-        <div className="flex flex-wrap gap-2 md:col-span-2">
-          <Button variant="primary" loading={props.submitting} disabled={props.submitting} onClick={submit}>{props.submitLabel}</Button>
+        <div className="sticky bottom-[calc(var(--safe-bottom)+4.25rem)] z-10 -mx-4 -mb-4 flex flex-wrap gap-2 border-t border-(--color-border) bg-(--color-surface) p-4 sm:-mx-5 sm:-mb-5 sm:p-5 md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0 md:col-span-2">
+          <Button className="w-full sm:w-auto" variant="primary" htmlType="submit" loading={props.submitting} disabled={props.submitting}>{props.submitLabel}</Button>
           {props.onCancel && <Button onClick={props.onCancel}>取消</Button>}
         </div>
       )}
-    </div>
+    </form>
+  );
+}
+
+function TransactionKindPicker(props: { readonly value: TransactionKind; readonly onChange: (kind: TransactionKind) => void }) {
+  return (
+    <fieldset className="md:col-span-2">
+      <legend className="label mb-2">类型</legend>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+        {TRANSACTION_KINDS.map((kind) => {
+          const selected = props.value === kind;
+          return (
+            <button
+              key={kind}
+              className={`ui-button min-w-0 px-2 ${selected ? "border-(--color-accent) bg-(--color-accent-soft) text-(--color-accent)" : "border-(--color-border) bg-(--color-surface) text-(--color-text-secondary)"}`}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => props.onChange(kind)}
+            >
+              {TRANSACTION_KIND_LABELS[kind]}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -95,7 +132,7 @@ function TagPicker(props: {
   readonly onChange: (tagIds: readonly string[]) => void;
 }) {
   return (
-    <div className="md:col-span-2">
+    <div>
       <CheckableTagList label="标签" selected={props.selected} options={entityOptions(props.data.tags)} onChange={props.onChange} />
     </div>
   );
@@ -187,7 +224,7 @@ function firstErrorField(errors: FieldErrors): TransactionFieldName | undefined 
   return ERROR_FIELD_ORDER.find((field) => Boolean(errors[field]));
 }
 
-function focusField(formRef: React.RefObject<HTMLDivElement | null>, field: TransactionFieldName): void {
+function focusField(formRef: React.RefObject<HTMLFormElement | null>, field: TransactionFieldName): void {
   window.requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>(`[data-field-name="${field}"]`)?.focus({ preventScroll: false }));
 }
 

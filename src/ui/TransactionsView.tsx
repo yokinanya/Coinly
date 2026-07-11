@@ -1,4 +1,4 @@
-import { ReceiptText } from "lucide-react";
+import { List, ReceiptText } from "lucide-react";
 import { useMemo, useState } from "react";
 import { deleteTransaction, upsertTransaction } from "../domain/operations";
 import { bumpVersion, createTransaction } from "../domain/factory";
@@ -21,24 +21,17 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
   const [message, setMessage] = useState("");
   const accounts = useMemo(() => Object.fromEntries(props.data.accounts.map((item) => [item.id, item.name])), [props.data.accounts]);
   const categories = useMemo(() => Object.fromEntries(props.data.categories.map((item) => [item.id, item.name])), [props.data.categories]);
-  const locationSearch = window.location.search;
-  const statsFilter = useMemo(() => filterFromUrl(locationSearch), [locationSearch]);
-  const filteredTransactions = useMemo(() => {
-    return props.data.transactions.filter((transaction) => matchesStatsFilter(transaction, statsFilter));
-  }, [props.data.transactions, statsFilter]);
-  const selectedVisibleCount = visibleSelectedCount(selectedIds, filteredTransactions);
+  const selectedVisibleCount = visibleSelectedCount(selectedIds, props.data.transactions);
 
   return (
     <section className="space-y-5">
       <PageHeader
         title="明细"
         actions={(
-          <>
-            <Button onClick={() => openStatements(props.setViewId)}><ReceiptText size={16} />账期</Button>
-            <Button variant="danger" disabled={selectedVisibleCount === 0} onClick={() => setBatchConfirmOpen(true)}>批量删除 {selectedVisibleCount || ""}</Button>
-          </>
+          <Button variant="danger" disabled={selectedVisibleCount === 0} onClick={() => setBatchConfirmOpen(true)}>批量删除 {selectedVisibleCount || ""}</Button>
         )}
       />
+      <DetailsSectionSwitch onStatements={() => openStatements(props.setViewId)} />
       <ErrorBanner message={message} />
       <EditorModal
         data={props.data}
@@ -54,7 +47,7 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
       />
       <TransactionTable
         data={props.data}
-        transactions={filteredTransactions}
+        transactions={props.data.transactions}
         accounts={accounts}
         categories={categories}
         selectedIds={selectedIds}
@@ -75,9 +68,22 @@ export function TransactionsView(props: { readonly data: AppData; readonly setDa
         title="批量删除交易"
         description={`确认删除选中的 ${selectedVisibleCount} 条交易？`}
         onCancel={() => setBatchConfirmOpen(false)}
-        onConfirm={() => deleteSelectedIds(props, visibleSelectedIds(selectedIds, filteredTransactions), setSelectedIds, setBatchConfirmOpen)}
+        onConfirm={() => deleteSelectedIds(props, visibleSelectedIds(selectedIds, props.data.transactions), setSelectedIds, setBatchConfirmOpen)}
       />
     </section>
+  );
+}
+
+function DetailsSectionSwitch(props: { readonly onStatements: () => void }) {
+  return (
+    <div className="inline-flex w-full gap-1 overflow-x-auto rounded-md border border-(--color-border) bg-(--color-surface) p-1 sm:w-auto">
+      <a className="ui-button shrink-0 border-(--color-accent) bg-(--color-accent-soft) text-(--color-accent)" href={VIEW_PATHS.transactions} aria-current="page">
+        <List size={16} />全部交易
+      </a>
+      <a className="ui-button shrink-0 border-transparent text-(--color-text) hover:bg-(--color-surface-muted)" href={VIEW_PATHS.statements} onClick={(event) => { event.preventDefault(); props.onStatements(); }}>
+        <ReceiptText size={16} />信用卡账期
+      </a>
+    </div>
   );
 }
 
@@ -163,28 +169,6 @@ function refundDraftFromTransaction(transaction: Transaction): TransactionDraft 
     note: transaction.note ? `退款：${transaction.note}` : "退款",
     refundOfTransactionId: transaction.id,
   };
-}
-
-interface UrlFilter {
-  readonly categoryId?: string;
-  readonly tagId?: string;
-  readonly currency?: string;
-}
-
-function filterFromUrl(search: string): UrlFilter {
-  const params = new URLSearchParams(search);
-  return {
-    categoryId: params.get("categoryId") ?? undefined,
-    tagId: params.get("tagId") ?? undefined,
-    currency: params.get("currency") ?? undefined,
-  };
-}
-
-function matchesStatsFilter(transaction: Transaction, filter: UrlFilter): boolean {
-  if (filter.currency && transaction.currency !== filter.currency) return false;
-  if (filter.categoryId && transaction.categoryId !== filter.categoryId) return false;
-  if (filter.tagId && !transaction.tagIds.includes(filter.tagId)) return false;
-  return true;
 }
 
 function saveTransaction(options: {

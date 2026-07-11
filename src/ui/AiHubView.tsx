@@ -1,471 +1,141 @@
-import { Camera, Check, Pencil, Sparkles, Tags } from "lucide-react";
-import dayjs from "dayjs";
-import { useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import type { AnalysisScope } from "../ai/context";
+import { ArrowUp, Bot, Check, ChevronUp, ImagePlus, LoaderCircle, Plus, Settings2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveAiModelCapabilities } from "../ai/modelCapabilities";
-import { selectVisionModel } from "../ai/settings";
 import { createAiProvider } from "../ai/provider";
-import { validateCategoryTagSuggestion, validateTransactionDraft, validateTransactionDrafts, type CategoryTagSuggestion } from "../ai/validation";
-import { createId, createTransaction } from "../domain/factory";
-import { upsertTransaction, validateTransactionDraft as validateDraft } from "../domain/operations";
-import type { AppData, Transaction, TransactionDraft } from "../domain/types";
-import { ErrorBanner, MessageBanner, PageHeader, SelectField } from "./common";
-import type { FormOption, StatusMessage } from "./common";
-import { Button, Checkbox, Input, Select, Tabs, Upload } from "./components";
+import { defaultAiSettings, normalizeAiSettings, selectActiveModel, selectActiveProvider, selectTextModel, withAiSelection } from "../ai/settings";
+import { bumpVersion, createId, createTransaction } from "../domain/factory";
+import { upsertTransaction } from "../domain/operations";
+import type { AiSettings, AppData, TransactionDraft } from "../domain/types";
+import { validateTransactionDraft } from "../ai/validation";
+import { Button, FloatingMenu, Input, Upload } from "./components";
 import { money } from "./format";
-import { TRANSACTION_KIND_LABELS } from "./labels";
 import { MarkdownContent } from "./MarkdownContent";
-import { Message } from "./toastApi";
-import { TransactionForm } from "./TransactionForm";
-import { draftFromTransaction } from "./transactionDraft";
-import { runAiAnalysis } from "./analysisActions";
-import { withRecentEntry } from "./entryDraftMemory";
+import { AiProviderManagerDialog } from "./AiProviderManager";
 
-const ANALYSIS_SCOPE_OPTIONS: readonly FormOption[] = [
-  { value: "current-month", label: "本月" },
-  { value: "last-3-months", label: "近 3 个月" },
-  { value: "last-6-months", label: "近 6 个月" },
-  { value: "year-to-date", label: "今年" },
-];
+interface AiHubViewProps { readonly data: AppData; readonly setData: (data: AppData) => void; }
+interface ChatMessage { readonly id: string; readonly role: "assistant" | "user"; readonly text: string; readonly imageUrl?: string; readonly imageName?: string; readonly pending?: boolean; }
+interface AttachedImage { readonly file: File; readonly url: string; }
+interface SessionModelOption { readonly value: string; readonly label: string; readonly providerId: string; readonly providerName: string; }
 
-const ASK_EXAMPLES = ["这个月餐饮花了多少？", "近 3 个月支出最高的分类是什么？", "有哪些交易缺少分类？"] as const;
-const SUGGESTION_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
-
-interface AiHubViewProps {
-  readonly data: AppData;
-  readonly setData: (data: AppData) => void;
-}
-
-interface CandidateRow {
-  readonly id: string;
-  readonly draft?: TransactionDraft;
-  readonly selected: boolean;
-  readonly editing: boolean;
-  readonly errors: readonly string[];
-}
-
-interface SuggestionRow {
-  readonly transaction: Transaction;
-  readonly selected: boolean;
-  readonly suggestion?: CategoryTagSuggestion;
-  readonly errors: readonly string[];
-}
-
-type AiTone = "idle" | "loading" | "success" | "error";
+const WELCOME_MESSAGE: ChatMessage = { id: "welcome", role: "assistant", text: "你可以直接问账、粘贴消费记录，或让我分析账本。" };
 
 export function AiHubView(props: AiHubViewProps) {
-  const [activeKey, setActiveKey] = useState("entry");
-  return (
-    <section className="space-y-5">
-      <PageHeader title="AI" />
-      <Tabs
-        activeKey={activeKey}
-        onChange={setActiveKey}
-        items={[
-          { key: "entry", label: <TabLabel icon={<Sparkles size={16} />} text="AI 记账" />, children: <AiEntryPanel data={props.data} setData={props.setData} /> },
-          { key: "analysis", label: <TabLabel icon={<Sparkles size={16} />} text="AI 分析" />, children: <AiAnalysisPanel data={props.data} /> },
-          { key: "ask", label: <TabLabel icon={<Sparkles size={16} />} text="AI 问账" />, children: <AiAskPanel data={props.data} /> },
-          { key: "suggest", label: <TabLabel icon={<Tags size={16} />} text="智能补全" />, children: <AiSuggestionPanel data={props.data} setData={props.setData} /> },
-        ]}
-      />
-    </section>
-  );
-}
-
-function TabLabel(props: { readonly icon: ReactNode; readonly text: string }) {
-  return <span className="inline-flex items-center gap-2">{props.icon}{props.text}</span>;
-}
-
-function AiEntryPanel(props: AiHubViewProps) {
-  const [text, setText] = useState("");
-  const [state, setState] = useState<{ readonly tone: AiTone; readonly text: string }>({ tone: "idle", text: "" });
-  const [rows, setRows] = useState<readonly CandidateRow[]>([]);
-  const [saving, setSaving] = useState(false);
-  const pending = state.tone === "loading";
-  const canParseText = text.trim().length > 0;
-  const supportsVision = props.data.aiSettings ? resolveAiModelCapabilities(selectVisionModel(props.data.aiSettings)).supportsVision : false;
-  const parseText = () => runEntryAiBatch({ task: () => createAiProvider(props.data.aiSettings).parseTextBatch(text, props.data), data: props.data, setRows, setState });
-  const parseImage = (file: File) => {
-    runEntryAi({ task: () => createAiProvider(props.data.aiSettings).parseImage(file, props.data), data: props.data, setRows, setState });
-    return Upload.LIST_IGNORE;
-  };
-  const saveSelected = () => saveCandidateRows({ ...props, rows, saving, setRows, setSaving, setState });
-  return (
-    <div className="space-y-4">
-      <section className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          <Button loading={pending} disabled={pending || !canParseText} onClick={parseText}><Sparkles size={16} />解析文本</Button>
-          <Upload accept="image/*" beforeUpload={parseImage} disabled={!supportsVision} maxCount={1} showUploadList={false}>
-            <Button loading={pending} disabled={pending || !supportsVision} icon={<Camera size={16} />}>解析图片</Button>
-          </Upload>
-        </div>
-        <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} value={text} onChange={(value) => setText(String(value))} placeholder="星巴克 38 元，餐饮，今天下午" />
-        <AiMessage state={state} />
-        {!supportsVision && <p className="text-xs text-(--color-text-secondary)">图片模型未开启图片能力。</p>}
-      </section>
-      {rows.length > 0 && <CandidateList data={props.data} rows={rows} saving={saving} setRows={setRows} onSave={saveSelected} />}
-    </div>
-  );
-}
-
-function CandidateList(props: {
-  readonly data: AppData;
-  readonly rows: readonly CandidateRow[];
-  readonly saving: boolean;
-  readonly setRows: (rows: readonly CandidateRow[]) => void;
-  readonly onSave: () => void;
-}) {
-  const validSelected = props.rows.filter((row) => row.selected && row.draft && row.errors.length === 0).length;
-  return (
-    <section className="panel space-y-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold text-(--color-text)">识别结果</h2>
-        <div className="flex gap-2">
-          <Button disabled={validSelected === 0} onClick={() => props.setRows(props.rows.map((row) => ({ ...row, selected: Boolean(row.draft) && row.errors.length === 0 })))}>全选有效</Button>
-          <Button variant="primary" loading={props.saving} disabled={validSelected === 0 || props.saving} onClick={props.onSave}><Check size={16} />保存选中 {validSelected}</Button>
-        </div>
-      </div>
-      <div className="space-y-3">
-        {props.rows.map((row, index) => <CandidateCard key={row.id} data={props.data} index={index} row={row} setRows={props.setRows} rows={props.rows} />)}
-      </div>
-    </section>
-  );
-}
-
-function CandidateCard(props: { readonly data: AppData; readonly rows: readonly CandidateRow[]; readonly row: CandidateRow; readonly index: number; readonly setRows: (rows: readonly CandidateRow[]) => void }) {
-  const row = props.row;
-  const replace = (next: CandidateRow) => props.setRows(props.rows.map((item) => item.id === row.id ? next : item));
-  return (
-    <div className="row-card space-y-3 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <Checkbox checked={row.selected} disabled={!row.draft || row.errors.length > 0} onChange={(selected) => replace({ ...row, selected })} />
-          <div className="min-w-0">
-            <div className="font-semibold text-(--color-text)">候选 {props.index + 1}</div>
-            {row.draft && <CandidateSummary data={props.data} draft={row.draft} />}
-            {row.errors.length > 0 && <p className="mt-2 text-sm text-(--color-error)">{row.errors.join("；")}</p>}
-          </div>
-        </div>
-        {row.draft && <Button onClick={() => replace({ ...row, editing: !row.editing })}><Pencil size={16} />{row.editing ? "收起" : "编辑"}</Button>}
-      </div>
-      {row.draft && row.editing && (
-        <div className="border-t border-(--color-border) pt-3">
-          <TransactionForm embedded data={props.data} draft={row.draft} onChange={(draft) => replace({ ...row, draft, errors: [] })} onSubmit={() => replace({ ...row, editing: false })} submitLabel="更新候选" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AiAnalysisPanel(props: { readonly data: AppData }) {
-  const [scope, setScope] = useState<AnalysisScope>("current-month");
-  const [aiText, setAiText] = useState("");
-  const [aiError, setAiError] = useState("");
+  const configuredSettings = props.data.aiSettings ?? defaultAiSettings();
+  const modelOptions = useMemo(() => sessionModelOptions(configuredSettings), [configuredSettings]);
+  const [sessionModel, setSessionModel] = useState(() => sessionDefaultSelectionValue(configuredSettings));
+  const selectedModel = modelOptions.some((option) => option.value === sessionModel) ? sessionModel : sessionDefaultSelectionValue(configuredSettings);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [modelEditorOpen, setModelEditorOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [attachedImage, setAttachedImage] = useState<AttachedImage>();
+  const [candidates, setCandidates] = useState<readonly TransactionDraft[]>([]);
   const [pending, setPending] = useState(false);
-  const run = () => runAiAnalysis({ data: props.data, scope, setAiText, setAiError, setPending });
-  return (
-    <section className="max-w-3xl space-y-4">
-      <div className="grid gap-4 sm:grid-cols-[minmax(12rem,18rem)_auto] sm:items-end">
-        <SelectField label="分析范围" value={scope} options={ANALYSIS_SCOPE_OPTIONS} onChange={(value) => setScope(value as AnalysisScope)} />
-        <Button variant="primary" loading={pending} disabled={pending} onClick={run}><Sparkles size={16} />分析账单</Button>
-      </div>
-      <ErrorBanner message={aiError} />
-      {aiText && <MarkdownContent content={aiText} />}
-    </section>
-  );
-}
+  const [messages, setMessages] = useState<readonly ChatMessage[]>([WELCOME_MESSAGE]);
+  const conversationEndRef = useRef<HTMLDivElement>(null);
+  const modelTriggerRef = useRef<HTMLButtonElement>(null);
+  const requestEpochRef = useRef(0);
+  const imageUrlsRef = useRef(new Set<string>());
+  const sessionData = useMemo(() => withSessionModel(props.data, selectedModel), [props.data, selectedModel]);
+  const supportsVision = useMemo(() => resolveAiModelCapabilities(selectTextModel(sessionData.aiSettings ?? defaultAiSettings())).supportsVision, [sessionData.aiSettings]);
 
-function AiAskPanel(props: { readonly data: AppData }) {
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
-  const ask = () => {
-    if (!question.trim()) return;
+  useEffect(() => { conversationEndRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" }); }, [messages]);
+
+  const submit = async () => {
+    const text = draft.trim();
+    const image = attachedImage?.file;
+    if ((!text && !image) || pending) return;
+    const requestEpoch = requestEpochRef.current;
+    const pendingId = createId();
+    setDraft("");
+    setAttachedImage(undefined);
+    setMessages((current) => [...current, { id: createId(), role: "user", text, imageUrl: attachedImage?.url, imageName: image?.name }, { id: pendingId, role: "assistant", pending: true, text: "正在处理…" }]);
     setPending(true);
-    setError("");
-    Promise.resolve()
-      .then(() => createAiProvider(props.data.aiSettings).ask(question, props.data))
-      .then(setAnswer)
-      .catch((error: unknown) => setError(error instanceof Error ? error.message : "AI 问账失败"))
-      .finally(() => setPending(false));
+    try {
+      const response = await createAiProvider(sessionData.aiSettings).ask(text || "请根据这张图片回答。", sessionData, image);
+      const nextCandidates = response.transactionDrafts.flatMap((draft) => {
+        const result = validateTransactionDraft(draft, sessionData);
+        return result.valid && result.draft ? [result.draft] : [];
+      });
+      if (requestEpoch === requestEpochRef.current) setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: response.answer, pending: false } : message));
+      if (requestEpoch === requestEpochRef.current) setCandidates(nextCandidates);
+    } catch (error) {
+      const failure = error instanceof Error ? error.message : "AI 调用失败";
+      if (requestEpoch === requestEpochRef.current) setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: failure, pending: false } : message));
+    } finally {
+      if (requestEpoch === requestEpochRef.current) setPending(false);
+    }
   };
-  return (
-    <section className="max-w-3xl space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {ASK_EXAMPLES.map((example) => <Button key={example} variant="ghost" onClick={() => setQuestion(example)}>{example}</Button>)}
-      </div>
-      <Input.TextArea autoSize={{ minRows: 3, maxRows: 7 }} value={question} onChange={(value) => setQuestion(String(value))} placeholder="这个月餐饮花了多少？" />
-      <div className="flex justify-end">
-        <Button variant="primary" loading={pending} disabled={pending || !question.trim()} onClick={ask}><Sparkles size={16} />提问</Button>
-      </div>
-      <ErrorBanner message={error} />
-      {answer && <MarkdownContent content={answer} />}
-    </section>
-  );
-}
 
-function AiSuggestionPanel(props: AiHubViewProps) {
-  const [pageSize, setPageSize] = useState<number>(10);
-  const [page, setPage] = useState(1);
-  const targets = useMemo(() => recentSuggestionTargets(props.data.transactions), [props.data.transactions]);
-  const [rows, setRows] = useState<readonly SuggestionRow[]>([]);
-  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const currentPage = Math.min(page, pages);
-  const pageRows = useMemo(() => currentPageRows(rows, currentPage, pageSize), [currentPage, pageSize, rows]);
-  const [state, setState] = useState<{ readonly tone: AiTone; readonly text: string }>({ tone: "idle", text: "" });
-  const [saving, setSaving] = useState(false);
-  const pending = state.tone === "loading";
-  const hasGeneratedRows = rows.length > 0;
-  const generate = () => generateSuggestions({ ...props, targets, setRows, setState, setPage });
-  const apply = () => applySuggestions({ ...props, rows, saving, setRows, setSaving, setState });
-  const selected = rows.filter((row) => row.selected && row.suggestion).length;
+  const newConversation = () => {
+    requestEpochRef.current += 1;
+    for (const url of imageUrlsRef.current) URL.revokeObjectURL(url);
+    imageUrlsRef.current.clear();
+    setMessages([WELCOME_MESSAGE]);
+    setDraft("");
+    setAttachedImage(undefined);
+    setCandidates([]);
+    setPending(false);
+    setSessionModel(sessionDefaultSelectionValue(configuredSettings));
+  };
+
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold text-(--color-text)">智能补全</h2>
-        <div className="flex gap-2">
-          <Button loading={pending} disabled={pending || targets.length === 0} onClick={generate}><Sparkles size={16} />生成建议</Button>
-          <Button variant="primary" loading={saving} disabled={selected === 0 || saving} onClick={apply}><Check size={16} />应用选中 {selected}</Button>
-        </div>
+    <section className="mx-auto flex h-[calc(100svh-6.75rem-var(--safe-top)-var(--safe-bottom))] min-h-120 w-full max-w-5xl flex-col md:h-[calc(100vh-3.25rem-var(--safe-top))]">
+      <h1 className="sr-only">助手</h1>
+      <div className="flex justify-end px-1 pt-2 sm:px-4"><Button className="h-8 min-h-8 px-2" onClick={newConversation} disabled={pending}><Plus size={14} aria-hidden="true" />新会话</Button></div>
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1 pb-6 pt-2 sm:px-4" aria-live="polite">
+        {messages.map((message) => <ChatBubble key={message.id} message={message} />)}
+        {candidates.map((draft, index) => <TransactionCandidate key={`${draft.accountId}-${draft.occurredAt}-${draft.amount}-${index}`} data={props.data} draft={draft} onSave={() => { props.setData(upsertTransaction(props.data, createTransaction(draft))); setCandidates((current) => current.filter((_, currentIndex) => currentIndex !== index)); }} />)}
+        <div ref={conversationEndRef} aria-hidden="true" />
       </div>
-      <AiMessage state={state} />
-      {targets.length === 0 && <p className="text-sm text-(--color-text-secondary)">最近 30 天暂无需要补全的交易。</p>}
-      {rows.length > 0 && (
-        <div className="space-y-3">
-          {pageRows.map((row) => <SuggestionCard key={row.transaction.id} data={props.data} row={row} rows={rows} setRows={setRows} />)}
-          <div className="flex items-center justify-between gap-3 border-t border-(--color-border) pt-3 text-sm whitespace-nowrap">
-            <span className="text-(--color-text-secondary)">已生成 {rows.length} 条建议，当前第 {currentPage} / {pages} 页</span>
-            <div className="flex items-center gap-2">
-              <Select value={String(pageSize)} options={SUGGESTION_PAGE_SIZE_OPTIONS.map((value) => ({ value: String(value), label: `${value} / 页` }))} onChange={(value) => {
-                setPageSize(Number(value));
-                setPage(1);
-              }} />
-              <Button disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一页</Button>
-              <Button disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>下一页</Button>
-            </div>
+      <form className="ai-composer mx-1 mb-1 sm:mx-4" aria-label="AI 消息" onSubmit={(event) => { event.preventDefault(); submit(); }}>
+        <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} value={draft} onChange={(value) => setDraft(String(value))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} name="ai-message" autoComplete="off" aria-label="输入消息" placeholder="输入消息" />
+        {attachedImage && <div className="ai-image-attachment"><ImagePlus size={15} aria-hidden="true" /><span className="min-w-0 truncate">{attachedImage.file.name}</span><button type="button" aria-label="移除图片" title="移除图片" onClick={() => { URL.revokeObjectURL(attachedImage.url); imageUrlsRef.current.delete(attachedImage.url); setAttachedImage(undefined); }}><X size={14} aria-hidden="true" /></button></div>}
+        <div className="flex min-h-9 items-center justify-between gap-3">
+          <Upload accept="image/*" beforeUpload={(file) => { const url = URL.createObjectURL(file); imageUrlsRef.current.add(url); setAttachedImage({ file, url }); return Upload.LIST_IGNORE; }} disabled={!supportsVision} maxCount={1} showUploadList={false}>
+            <button className="grid h-9 w-9 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50" type="button" aria-label="插入图片" title={supportsVision ? "插入图片" : "当前模型不支持图片"} disabled={!supportsVision}><ImagePlus size={18} aria-hidden="true" /></button>
+          </Upload>
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            <button ref={modelTriggerRef} className="ai-model-trigger" type="button" aria-label="切换模型" aria-haspopup="menu" aria-expanded={modelMenuOpen} onClick={() => setModelMenuOpen((open) => !open)}><span className="min-w-0 truncate">{modelOptions.find((option) => option.value === selectedModel)?.label ?? "选择模型"}</span><ChevronUp className="shrink-0" size={14} aria-hidden="true" /></button>
+            {modelMenuOpen && <ModelMenu options={modelOptions} selectedModel={selectedModel} triggerRef={modelTriggerRef} close={() => setModelMenuOpen(false)} selectModel={setSessionModel} openManager={() => setModelEditorOpen(true)} />}
+            <Button className="ai-send-button size-9 min-h-9 rounded-md p-0" variant="primary" htmlType="submit" aria-label="发送" title="发送" loading={pending} disabled={(!draft.trim() && !attachedImage) || pending}><ArrowUp size={18} strokeWidth={2.5} aria-hidden="true" /></Button>
           </div>
         </div>
-      )}
+      </form>
+      {modelEditorOpen && <AiProviderManagerDialog settings={configuredSettings} onClose={() => setModelEditorOpen(false)} onSave={(settings) => { props.setData(bumpVersion({ ...props.data, aiSettings: settings })); setSessionModel(sessionDefaultSelectionValue(settings)); setModelEditorOpen(false); }} />}
     </section>
   );
 }
 
-function SuggestionCard(props: { readonly data: AppData; readonly row: SuggestionRow; readonly rows: readonly SuggestionRow[]; readonly setRows: (rows: readonly SuggestionRow[]) => void }) {
-  const row = props.row;
-  const replace = (next: SuggestionRow) => props.setRows(props.rows.map((item) => item.transaction.id === row.transaction.id ? next : item));
-  const changeText = row.suggestion ? suggestionChangeText(props.data, row.transaction, row.suggestion) : undefined;
-  return (
-    <div className="row-card flex items-start justify-between gap-3 p-3">
-      <div className="flex min-w-0 items-start gap-3">
-        <Checkbox checked={row.selected} disabled={!row.suggestion || row.errors.length > 0} onChange={(selected) => replace({ ...row, selected })} />
-        <div className="min-w-0 text-sm">
-          <div className="font-semibold text-(--color-text)">{row.transaction.note || TRANSACTION_KIND_LABELS[row.transaction.kind]}</div>
-          <div className="mt-1 text-(--color-text-secondary)">{money(row.transaction.amount, row.transaction.currency)} · {new Date(row.transaction.occurredAt).toLocaleDateString("zh-CN")}</div>
-          {row.suggestion && <div className="mt-2 text-(--color-text-secondary)">{changeText ?? suggestionText(props.data, row.suggestion)}</div>}
-          {row.errors.length > 0 && <div className="mt-2 text-(--color-error)">{row.errors.join("；")}</div>}
-        </div>
-      </div>
-      {row.suggestion && <span className="text-xs text-(--color-text-muted)">{Math.round(row.suggestion.confidence * 100)}%</span>}
-    </div>
-  );
+function ModelMenu(props: { readonly options: readonly SessionModelOption[]; readonly selectedModel: string; readonly triggerRef: React.RefObject<HTMLButtonElement | null>; readonly close: () => void; readonly selectModel: (value: string) => void; readonly openManager: () => void; }) {
+  return <FloatingMenu triggerRef={props.triggerRef} close={props.close} preferredHeight={240}><div className="ai-model-menu" role="menu" aria-label="模型列表">{props.options.map((option, index) => <div key={option.value}>{(index === 0 || props.options[index - 1]?.providerId !== option.providerId) && <div className="ai-model-provider-label">{option.providerName}</div>}<button className={option.value === props.selectedModel ? "ai-model-option ai-model-option-selected" : "ai-model-option"} type="button" role="menuitemradio" aria-checked={option.value === props.selectedModel} onClick={() => { props.selectModel(option.value); props.close(); }}><span className="min-w-0 truncate">{option.label}</span>{option.value === props.selectedModel && <Check size={15} aria-hidden="true" />}</button></div>)}<div className="border-t border-(--color-border) pt-1"><button className="ai-model-option" type="button" role="menuitem" onClick={() => { props.close(); props.openManager(); }}><Settings2 size={15} aria-hidden="true" />管理模型</button></div></div></FloatingMenu>;
 }
 
-function CandidateSummary(props: { readonly data: AppData; readonly draft: TransactionDraft }) {
-  const account = props.data.accounts.find((item) => item.id === props.draft.accountId)?.name ?? "未匹配账户";
-  const category = props.data.categories.find((item) => item.id === props.draft.categoryId)?.name ?? "未选择";
-  const tags = props.draft.tagIds.map((id) => props.data.tags.find((item) => item.id === id)?.name).filter(Boolean).join("，") || "无标签";
-  return <div className="mt-1 truncate text-sm text-(--color-text-secondary)" title={`${account} · ${category} · ${tags}`}>{TRANSACTION_KIND_LABELS[props.draft.kind]} · {money(props.draft.amount, props.draft.currency)} · {account} · {category} · {tags}</div>;
+function sessionModelOptions(settings: NonNullable<AppData["aiSettings"]>): readonly SessionModelOption[] {
+  const normalized = normalizeAiSettings(settings);
+  return normalized.providers.flatMap((provider) => provider.models.filter((model) => model.model).map((model) => ({ value: modelSelectionValue(provider.id, model.id), label: model.name || model.model, providerId: provider.id, providerName: provider.name })));
 }
 
-function AiMessage(props: { readonly state: { readonly tone: AiTone; readonly text: string } }) {
-  const tone = props.state.tone === "idle" || props.state.tone === "loading" ? "info" : props.state.tone;
-  return <MessageBanner message={props.state.text} tone={tone as StatusMessage["tone"]} />;
+function withSessionModel(data: AppData, selection: string): AppData {
+  const settings = normalizeAiSettings(data.aiSettings ?? defaultAiSettings());
+  const [providerId, modelId] = selection.split("::");
+  return { ...data, aiSettings: withAiSelection(settings, providerId || settings.activeProviderId, modelId || settings.activeModelId) };
 }
 
-function runEntryAi(options: {
-  readonly task: () => Promise<TransactionDraft>;
-  readonly data: AppData;
-  readonly setRows: (rows: readonly CandidateRow[]) => void;
-  readonly setState: (state: { readonly tone: AiTone; readonly text: string }) => void;
-}) {
-  options.setState({ tone: "loading", text: "AI 正在解析输入" });
-  Promise.resolve()
-    .then(options.task)
-    .then((candidate) => {
-      const result = validateTransactionDraft(candidate, options.data);
-      if (!result.valid || !result.draft) throw new Error(result.errors.join("；"));
-      options.setRows([candidateRow(result.draft)]);
-      options.setState({ tone: "success", text: "已生成识别结果，请确认后保存" });
-    })
-    .catch((error: unknown) => options.setState({ tone: "error", text: error instanceof Error ? error.message : "AI 解析失败" }));
+function sessionDefaultSelectionValue(settings: AiSettings): string {
+  const normalized = normalizeAiSettings(settings);
+  const provider = selectActiveProvider(normalized);
+  const model = provider.models.find((item) => item.id === provider.defaultModelId) ?? selectActiveModel(normalized);
+  return modelSelectionValue(provider.id, model.id);
 }
 
-function runEntryAiBatch(options: {
-  readonly task: () => Promise<readonly TransactionDraft[]>;
-  readonly data: AppData;
-  readonly setRows: (rows: readonly CandidateRow[]) => void;
-  readonly setState: (state: { readonly tone: AiTone; readonly text: string }) => void;
-}) {
-  options.setState({ tone: "loading", text: "AI 正在解析文本" });
-  Promise.resolve()
-    .then(options.task)
-    .then((candidates) => {
-      const rows = validateTransactionDrafts(candidates, options.data).map((result) => result.draft ? candidateRow(result.draft) : invalidCandidateRow(result.errors));
-      options.setRows(rows);
-      const validCount = rows.filter((row) => row.draft && row.errors.length === 0).length;
-      options.setState({ tone: validCount > 0 ? "success" : "error", text: `已解析 ${validCount} 笔有效候选` });
-    })
-    .catch((error: unknown) => options.setState({ tone: "error", text: error instanceof Error ? error.message : "AI 文本解析失败" }));
+function modelSelectionValue(providerId: string, modelId: string): string { return `${providerId}::${modelId}`; }
+
+function ChatBubble(props: { readonly message: ChatMessage }) {
+  const assistant = props.message.role === "assistant";
+  return <div className={`flex gap-3 ${assistant ? "items-start" : "justify-end"}`}>{assistant && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-(--color-surface) text-(--color-accent) shadow-sm"><Bot size={16} aria-hidden="true" /></span>}<div className={assistant ? "min-w-0 max-w-3xl pt-1 text-sm text-(--color-text)" : "max-w-[min(36rem,82%)] rounded-md bg-(--color-surface-muted) px-3 py-2 text-sm text-(--color-text)"}>{props.message.pending ? <span className="inline-flex items-center gap-2 text-(--color-text-secondary)"><LoaderCircle className="animate-spin" size={14} aria-hidden="true" />{props.message.text}</span> : <>{props.message.imageUrl && <img className="mb-2 max-h-72 max-w-full rounded-md object-contain" src={props.message.imageUrl} alt={props.message.imageName || "已发送图片"} />}{props.message.text && (assistant ? <MarkdownContent plain content={props.message.text} /> : props.message.text)}</>}</div></div>;
 }
 
-function saveCandidateRows(options: AiHubViewProps & {
-  readonly rows: readonly CandidateRow[];
-  readonly saving: boolean;
-  readonly setRows: (rows: readonly CandidateRow[]) => void;
-  readonly setSaving: (saving: boolean) => void;
-  readonly setState: (state: { readonly tone: AiTone; readonly text: string }) => void;
-}) {
-  if (options.saving) return;
-  options.setSaving(true);
-  const selected = options.rows.filter((row): row is CandidateRow & { readonly draft: TransactionDraft } => row.selected && Boolean(row.draft) && row.errors.length === 0);
-  let updated = options.data;
-  const savedIds = new Set<string>();
-  const errors: string[] = [];
-  for (const row of selected) {
-    const result = validateDraft(updated, row.draft);
-    if (!result.valid) {
-      errors.push(result.errors.join("；"));
-      continue;
-    }
-    updated = withRecentEntry(upsertTransaction(updated, createTransaction(row.draft)), row.draft);
-    savedIds.add(row.id);
-  }
-  if (updated !== options.data) options.setData(updated);
-  options.setRows(options.rows.filter((row) => !savedIds.has(row.id)));
-  const text = errors.length > 0 ? `部分候选保存失败：${errors.join("；")}` : `已保存 ${selected.length} 笔交易`;
-  options.setState({ tone: errors.length > 0 ? "error" : "success", text });
-  Message[errors.length > 0 ? "error" : "success"](text);
-  window.setTimeout(() => options.setSaving(false), 200);
-}
-
-function generateSuggestions(options: AiHubViewProps & {
-  readonly targets: readonly Transaction[];
-  readonly setRows: (rows: readonly SuggestionRow[]) => void;
-  readonly setPage: (page: number) => void;
-  readonly setState: (state: { readonly tone: AiTone; readonly text: string }) => void;
-}) {
-  options.setState({ tone: "loading", text: "AI 正在生成分类和标签建议" });
-  Promise.resolve()
-    .then(() => {
-      const provider = createAiProvider(options.data.aiSettings);
-      return Promise.all(options.targets.map(async (transaction): Promise<SuggestionRow | undefined> => {
-        try {
-          const value = await provider.suggestCategoryTag(draftFromTransaction(transaction), options.data);
-          const result = validateCategoryTagSuggestion(value, options.data, draftFromTransaction(transaction));
-          const hasSuggestion = Boolean(result.suggestion && suggestionHasChange(transaction, result.suggestion));
-          if (!hasSuggestion || !result.suggestion) return undefined;
-          return { transaction, selected: true, suggestion: result.suggestion, errors: result.errors };
-        } catch (error: unknown) {
-          return { transaction, selected: false, suggestion: undefined, errors: [error instanceof Error ? error.message : "AI 建议失败"] };
-        }
-      }));
-    })
-    .then((rows) => {
-      const nextRows = rows.filter((row): row is SuggestionRow => row !== undefined);
-      options.setRows(nextRows);
-      options.setPage(1);
-      options.setState({ tone: "success", text: `已生成 ${nextRows.length} 条建议` });
-    })
-    .catch((error: unknown) => options.setState({ tone: "error", text: error instanceof Error ? error.message : "AI 建议失败" }));
-}
-
-function applySuggestions(options: AiHubViewProps & {
-  readonly rows: readonly SuggestionRow[];
-  readonly saving: boolean;
-  readonly setRows: (rows: readonly SuggestionRow[]) => void;
-  readonly setSaving: (saving: boolean) => void;
-  readonly setState: (state: { readonly tone: AiTone; readonly text: string }) => void;
-}) {
-  if (options.saving) return;
-  options.setSaving(true);
-  const selected = options.rows.filter((row): row is SuggestionRow & { readonly suggestion: CategoryTagSuggestion } => row.selected && Boolean(row.suggestion));
-  let updated = options.data;
-  for (const row of selected) {
-    updated = upsertTransaction(updated, {
-      ...row.transaction,
-      categoryId: row.suggestion.categoryId ?? row.transaction.categoryId,
-      tagIds: row.suggestion.tagIds.length > 0 ? row.suggestion.tagIds : row.transaction.tagIds,
-    });
-  }
-  if (updated !== options.data) options.setData(updated);
-  options.setRows(options.rows.filter((row) => !selected.some((applied) => applied.transaction.id === row.transaction.id)));
-  const text = `已应用 ${selected.length} 条建议`;
-  options.setState({ tone: "success", text });
-  Message.success(text);
-  window.setTimeout(() => options.setSaving(false), 200);
-}
-
-function candidateRow(draft: TransactionDraft): CandidateRow {
-  return { id: createId(), draft, selected: true, editing: false, errors: [] };
-}
-
-function invalidCandidateRow(errors: readonly string[]): CandidateRow {
-  return { id: createId(), selected: false, editing: false, errors };
-}
-
-function needsSuggestion(transaction: Transaction): boolean {
-  return (transaction.kind === "income" || transaction.kind === "expense" || transaction.kind === "refund") && (!transaction.categoryId || transaction.tagIds.length === 0);
-}
-
-function recentSuggestionTargets(transactions: readonly Transaction[]): readonly Transaction[] {
-  const threshold = dayjs().subtract(30, "day").format("YYYY-MM-DD");
-  return [...transactions]
-    .filter((transaction) => needsSuggestion(transaction) && transaction.occurredAt >= threshold)
-    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.createdAt.localeCompare(left.createdAt));
-}
-
-function suggestionText(data: AppData, suggestion: CategoryTagSuggestion): string {
-  const category = data.categories.find((item) => item.id === suggestion.categoryId)?.name ?? "不改分类";
-  const tags = suggestion.tagIds.map((id) => data.tags.find((item) => item.id === id)?.name).filter(Boolean).join("，") || "不改标签";
-  return `${category} · ${tags}`;
-}
-
-function suggestionChangeText(data: AppData, transaction: Transaction, suggestion: CategoryTagSuggestion): string | undefined {
-  const parts: string[] = [];
-  const currentCategory = categoryLabel(data, transaction.categoryId);
-  const nextCategory = categoryLabel(data, suggestion.categoryId ?? transaction.categoryId);
-  if ((suggestion.categoryId ?? transaction.categoryId) !== transaction.categoryId) {
-    parts.push(`分类：${currentCategory} → ${nextCategory}`);
-  }
-  const currentTags = tagsLabel(data, transaction.tagIds);
-  const nextTagIds = suggestion.tagIds.length > 0 ? suggestion.tagIds : transaction.tagIds;
-  if (!sameIds(transaction.tagIds, nextTagIds)) {
-    parts.push(`标签：${currentTags} → ${tagsLabel(data, nextTagIds)}`);
-  }
-  return parts.join("；") || undefined;
-}
-
-function suggestionHasChange(transaction: Transaction, suggestion: CategoryTagSuggestion): boolean {
-  const nextCategoryId = suggestion.categoryId ?? transaction.categoryId;
-  const nextTagIds = suggestion.tagIds.length > 0 ? suggestion.tagIds : transaction.tagIds;
-  return nextCategoryId !== transaction.categoryId || !sameIds(transaction.tagIds, nextTagIds);
-}
-
-function categoryLabel(data: AppData, categoryId?: string): string {
-  return data.categories.find((item) => item.id === categoryId)?.name ?? "未分类";
-}
-
-function tagsLabel(data: AppData, tagIds: readonly string[]): string {
-  return tagIds.map((id) => data.tags.find((item) => item.id === id)?.name).filter(Boolean).join("，") || "无标签";
-}
-
-function sameIds(left: readonly string[], right: readonly string[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((item, index) => item === right[index]);
-}
-
-function currentPageRows<T>(rows: readonly T[], page: number, pageSize: number): readonly T[] {
-  return rows.slice((page - 1) * pageSize, page * pageSize);
+function TransactionCandidate(props: { readonly data: AppData; readonly draft: TransactionDraft; readonly onSave: () => void }) {
+  const account = props.data.accounts.find((account) => account.id === props.draft.accountId)?.name ?? "未匹配账户";
+  return <section className="ml-11 max-w-md border border-(--color-accent) bg-(--color-surface) p-3 text-sm"><p className="font-medium">待确认交易</p><p className="mt-1 text-(--color-text-secondary)">{money(props.draft.amount, props.draft.currency)} · {account} · {props.draft.occurredAt}</p>{props.draft.note && <p className="mt-1 text-(--color-text-secondary)">{props.draft.note}</p>}<div className="mt-3 flex justify-end"><Button variant="primary" onClick={props.onSave}>保存交易</Button></div></section>;
 }

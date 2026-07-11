@@ -50,7 +50,7 @@ function S3Fields(props: {
           <TextField label="对象路径" value={props.target.objectKey} onChange={(objectKey) => props.update({ objectKey })} />
         </div>
         <label className="mt-3 flex min-h-10 items-center gap-2 text-sm text-(--color-text-secondary)">
-          <Switch checked={Boolean(props.target.forcePathStyle)} onChange={(forcePathStyle: boolean) => props.update({ forcePathStyle })} />
+          <Switch ariaLabel="强制路径样式" checked={Boolean(props.target.forcePathStyle)} onChange={(forcePathStyle: boolean) => props.update({ forcePathStyle })} />
           使用路径样式访问
         </label>
       </FormGroup>

@@ -1,158 +1,327 @@
-import { BarChart3, CalendarClock, Home, List, Menu as MenuIcon, MonitorCog, Moon, PieChart, PlusCircle, RefreshCw, Settings, Sparkles, Sun, Tags, Wallet, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  BarChart3,
+  CalendarClock,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Home,
+  List,
+  MonitorCog,
+  Moon,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Settings,
+  Sparkles,
+  Sun,
+  Tags,
+  WalletCards,
+  type LucideIcon,
+} from "lucide-react";
+import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { ThemeMode } from "../domain/types";
-import { pushViewPath, type ViewId } from "./appRoutes";
+import { pushViewPath, VIEW_PATHS, type ViewId } from "./appRoutes";
 import { Drawer } from "./components";
 
-const DRAWER_WIDTH = 280;
+const DRAWER_WIDTH = 320;
 
-const NAV_ITEMS = [
-  { id: "home", label: "首页", icon: Home },
-  { id: "entry", label: "记账", icon: PlusCircle },
+interface NavigationItem {
+  readonly id: ViewId;
+  readonly label: string;
+  readonly icon: LucideIcon;
+}
+
+const NAV_GROUPS: readonly { readonly label: string; readonly items: readonly NavigationItem[] }[] = [
+  {
+    label: "日常",
+    items: [
+      { id: "home", label: "概览", icon: Home },
+      { id: "entry", label: "记账", icon: Plus },
+      { id: "transactions", label: "明细", icon: List },
+    ],
+  },
+  {
+    label: "洞察",
+    items: [
+      { id: "stats", label: "统计", icon: BarChart3 },
+      { id: "ai", label: "助手", icon: Sparkles },
+    ],
+  },
+  {
+    label: "规划",
+    items: [
+      { id: "budget", label: "预算", icon: WalletCards },
+      { id: "recurring", label: "订阅", icon: CalendarClock },
+    ],
+  },
+  {
+    label: "管理",
+    items: [
+      { id: "accounts", label: "账户", icon: WalletCards },
+      { id: "categories", label: "分类标签", icon: Tags },
+      { id: "settings", label: "设置", icon: Settings },
+    ],
+  },
+];
+
+const MOBILE_ITEMS: readonly NavigationItem[] = [
+  { id: "home", label: "概览", icon: Home },
   { id: "transactions", label: "明细", icon: List },
-  { id: "accounts", label: "账户", icon: Wallet },
-  { id: "budget", label: "预算", icon: PieChart },
+  { id: "entry", label: "记账", icon: Plus },
   { id: "stats", label: "统计", icon: BarChart3 },
-  { id: "ai", label: "AI", icon: Sparkles },
-  { id: "categories", label: "分类", icon: Tags },
-  { id: "recurring", label: "订阅", icon: CalendarClock },
-  { id: "settings", label: "设置", icon: Settings },
-] as const;
+  { id: "ai", label: "助手", icon: Sparkles },
+];
 
-export function NavigationSidebar(props: {
+const MORE_ITEMS = NAV_GROUPS.flatMap((group) => group.items).filter(
+  (item) => !MOBILE_ITEMS.some((mobile) => mobile.id === item.id),
+);
+
+interface NavigationProps {
   readonly viewId: ViewId;
   readonly setViewId: (id: ViewId) => void;
+  readonly collapsed?: boolean;
   readonly theme: ThemeMode;
   readonly onThemeChange: (theme: ThemeMode) => void;
+  readonly onCollapsedChange?: (collapsed: boolean) => void;
   readonly syncDisabled: boolean;
   readonly syncing: boolean;
   readonly onSync: () => void;
-}) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const items = useNavigationItems();
+}
+
+export function NavigationSidebar(props: NavigationProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [uncontrolledCollapsed, setUncontrolledCollapsed] = useState(false);
+  const collapsed = props.collapsed ?? uncontrolledCollapsed;
+  const setCollapsed = (nextCollapsed: boolean) => {
+    if (props.collapsed === undefined) setUncontrolledCollapsed(nextCollapsed);
+    props.onCollapsedChange?.(nextCollapsed);
+  };
   const select = (id: ViewId) => {
-    selectView(id, props.setViewId);
-    setMobileOpen(false);
+    props.setViewId(id);
+    setMoreOpen(false);
   };
   return (
     <>
-      <MobileHeader openMenu={() => setMobileOpen(true)} goHome={() => select("home")} goEntry={() => select("entry")} goAi={() => select("ai")} />
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-(--color-border) bg-(--color-surface) md:block">
-        <SidebarContent items={items} viewId={props.viewId} theme={props.theme} syncDisabled={props.syncDisabled} syncing={props.syncing} onThemeChange={props.onThemeChange} onSync={props.onSync} onSelect={select} />
-      </aside>
-      <Drawer
-        className={{ body: "drawer-body-full p-0", content: "bg-transparent" }}
-        closable={false}
-        open={mobileOpen}
-        title={null}
-        width={DRAWER_WIDTH}
-        placement="left"
-        onClose={() => setMobileOpen(false)}
-      >
-        <SidebarContent items={items} viewId={props.viewId} theme={props.theme} syncDisabled={props.syncDisabled} syncing={props.syncing} onThemeChange={props.onThemeChange} onSync={props.onSync} onSelect={select} compact onClose={() => setMobileOpen(false)} />
-      </Drawer>
+      <DesktopSidebar {...props} collapsed={collapsed} onCollapsedChange={setCollapsed} onSelect={select} />
+      <MobileNavigation viewId={props.viewId} openMore={() => setMoreOpen(true)} onSelect={select} />
+      <MoreDrawer {...props} open={moreOpen} close={() => setMoreOpen(false)} onSelect={select} />
     </>
   );
 }
 
-function MobileHeader(props: { readonly openMenu: () => void; readonly goHome: () => void; readonly goEntry: () => void; readonly goAi: () => void }) {
+function DesktopSidebar(props: NavigationProps & { readonly onSelect: (id: ViewId) => void }) {
+  const collapsed = Boolean(props.collapsed);
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-(--color-border) bg-(--color-surface) pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-(--safe-top) md:hidden">
-      <button
-        className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted)"
-        type="button"
-        aria-label="打开导航"
-        title="打开导航"
-        onClick={props.openMenu}
-      >
-        <MenuIcon size={22} />
-      </button>
-      <button className="text-lg font-semibold leading-none text-(--color-text)" type="button" onClick={props.goHome}>Coinly</button>
-      <div className="mobile-header-actions">
+    <aside className={`fixed inset-y-0 left-0 z-20 hidden border-r border-(--color-border) bg-(--color-background) md:block ${collapsed ? "w-16" : "w-60"}`}>
+      <div className={`flex h-full min-h-0 flex-col pb-4 pt-[calc(1.25rem+var(--safe-top))] ${collapsed ? "px-2" : "px-3"}`}>
+        <div className={`mb-5 flex min-h-11 items-center ${collapsed ? "justify-center" : "justify-between px-2"}`}>
+        {!collapsed && (
+          <RouteLink
+            className="flex min-w-0 items-center text-xl font-semibold text-(--color-text)"
+            id="home"
+            onSelect={props.onSelect}
+          >
+            Coinly
+          </RouteLink>
+        )}
         <button
-          className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted)"
+          className="grid h-9 w-9 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text)"
           type="button"
-          aria-label="AI"
-          title="AI"
-          onClick={props.goAi}
+          title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          onClick={() => props.onCollapsedChange?.(!collapsed)}
         >
-          <Sparkles size={22} />
+          {collapsed ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
         </button>
-        <button
-          className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted)"
-          type="button"
-          aria-label="快速记账"
-          title="快速记账"
-          onClick={props.goEntry}
-        >
-          <PlusCircle size={22} />
-        </button>
+        </div>
+        <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto pb-3" aria-label="桌面主导航">
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label}>
+              {!collapsed && <div className="px-3 pb-1.5 text-xs font-medium text-(--color-text-muted)">{group.label}</div>}
+              <div className="space-y-1">
+                {group.items.map((item) => (
+                  <DesktopRoute
+                    key={item.id}
+                    item={item}
+                    active={props.viewId === item.id}
+                    collapsed={collapsed}
+                    onSelect={props.onSelect}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+        <footer className={`mt-2 flex items-center border-t border-(--color-border) pt-3 ${collapsed ? "flex-col gap-1" : "justify-between px-2"}`}>
+          {!collapsed && <span className="text-xs text-(--color-text-muted)">本地加密账本</span>}
+          <div className="flex gap-1">
+            <SyncButton disabled={props.syncDisabled} syncing={props.syncing} onSync={props.onSync} />
+            <ThemeButton theme={props.theme} onChange={props.onThemeChange} />
+          </div>
+        </footer>
       </div>
-    </header>
+    </aside>
   );
 }
 
-function SidebarContent(props: {
-  readonly items: ReturnType<typeof useNavigationItems>;
-  readonly viewId: ViewId;
-  readonly theme: ThemeMode;
-  readonly syncDisabled: boolean;
-  readonly syncing: boolean;
-  readonly onThemeChange: (theme: ThemeMode) => void;
-  readonly onSync: () => void;
+function DesktopRoute(props: {
+  readonly item: NavigationItem;
+  readonly active: boolean;
+  readonly collapsed?: boolean;
   readonly onSelect: (id: ViewId) => void;
-  readonly compact?: boolean;
-  readonly onClose?: () => void;
 }) {
-  const paddingClass = props.compact ? "px-3 pb-4 pt-[calc(1rem+var(--safe-top))]" : "px-3 pb-4 pt-[calc(1.5rem+var(--safe-top))]";
+  const Icon = props.item.icon;
   return (
-    <div className={`flex h-full min-h-0 flex-col bg-transparent ${paddingClass}`}>
-      <div className="flex min-h-12 items-center justify-between px-2 pb-4">
-        <button className={`${props.compact ? "text-lg" : "text-2xl"} font-semibold text-(--color-text)`} type="button" onClick={() => selectHome(props)}>Coinly</button>
-        {props.compact && (
-          <button
-            className="motion-press grid h-9 w-9 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted)"
-            type="button"
-            aria-label="关闭导航"
-            title="关闭导航"
-            onClick={props.onClose}
-          >
-            <X size={20} />
-          </button>
-        )}
-      </div>
-      <nav className="flex-1 space-y-1">
-        {props.items.map((item) => (
-          <button
-            key={item.key}
-            className={`motion-press relative flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium ${props.viewId === item.key ? "bg-(--color-accent-soft) text-(--color-accent) ring-1 ring-(--color-accent)/20 before:absolute before:left-0 before:top-2 before:h-6 before:w-1 before:rounded-r before:bg-(--color-accent)" : "text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text)"}`}
-            type="button"
-            onClick={() => props.onSelect(item.key)}
-          >
-            {item.icon}
-            {item.label}
-          </button>
+    <RouteLink
+      className={`flex min-h-10 items-center rounded-md text-sm font-medium ${props.collapsed ? "justify-center px-0" : "gap-3 px-3"} ${props.active ? "bg-(--color-accent-soft) text-(--color-text)" : "text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text)"}`}
+      id={props.item.id}
+      current={props.active}
+      onSelect={props.onSelect}
+    >
+      <Icon size={18} aria-hidden="true" />
+      {props.collapsed ? <span className="sr-only">{props.item.label}</span> : props.item.label}
+    </RouteLink>
+  );
+}
+
+function MobileNavigation(props: {
+  readonly viewId: ViewId;
+  readonly openMore: () => void;
+  readonly onSelect: (id: ViewId) => void;
+}) {
+  const moreActive = MORE_ITEMS.some((item) => item.id === props.viewId);
+  return (
+    <nav
+      className="fixed bottom-0 left-0 z-30 grid w-dvw grid-cols-6 border-t border-(--color-border) bg-(--color-background) px-[max(0.25rem,var(--safe-left))] pb-(--safe-bottom) md:hidden"
+      aria-label="移动主导航"
+    >
+      {MOBILE_ITEMS.map((item) => (
+        <MobileRoute
+          key={item.id}
+          item={item}
+          active={props.viewId === item.id}
+          onSelect={props.onSelect}
+        />
+      ))}
+      <button
+        className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-medium ${moreActive ? "text-(--color-text)" : "text-(--color-text-secondary)"}`}
+        type="button"
+        aria-label="更多"
+        aria-expanded={moreActive || undefined}
+        onClick={props.openMore}
+      >
+        <MoreHorizontal size={21} aria-hidden="true" />
+        <span>更多</span>
+      </button>
+    </nav>
+  );
+}
+
+function MobileRoute(props: {
+  readonly item: NavigationItem;
+  readonly active: boolean;
+  readonly onSelect: (id: ViewId) => void;
+}) {
+  const Icon = props.item.icon;
+  const entry = props.item.id === "entry";
+  return (
+    <RouteLink
+      className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-medium ${props.active ? "text-(--color-text)" : "text-(--color-text-secondary)"}`}
+      id={props.item.id}
+      current={props.active}
+      onSelect={props.onSelect}
+    >
+      <span className={entry && props.active ? "grid h-8 w-8 place-items-center rounded-md bg-(--color-accent-soft)" : undefined}>
+        <Icon size={entry ? 20 : 21} strokeWidth={entry ? 2.5 : 2} aria-hidden="true" />
+      </span>
+      {props.item.label}
+    </RouteLink>
+  );
+}
+
+function MoreDrawer(
+  props: NavigationProps & {
+    readonly open: boolean;
+    readonly close: () => void;
+    readonly onSelect: (id: ViewId) => void;
+  },
+) {
+  return (
+    <Drawer open={props.open} title="更多" width={DRAWER_WIDTH} placement="right" onClose={props.close}>
+      <nav className="grid gap-1" aria-label="更多功能">
+        {MORE_ITEMS.map((item) => (
+          <DesktopRoute
+            key={item.id}
+            item={item}
+            active={props.viewId === item.id}
+            collapsed={false}
+            onSelect={props.onSelect}
+          />
         ))}
       </nav>
-      <footer className="mt-4 flex justify-end gap-2 border-t border-(--color-border) px-2 pt-4">
-        <SyncButton disabled={props.syncDisabled} syncing={props.syncing} onSync={props.onSync} />
-        <ThemeButton theme={props.theme} onChange={props.onThemeChange} />
-      </footer>
-    </div>
+      <div className="mt-5 grid grid-cols-2 gap-2 border-t border-(--color-border) pt-4">
+        <button
+          className="ui-button border-(--color-border) bg-(--color-surface) text-(--color-text)"
+          type="button"
+          disabled={props.syncDisabled || props.syncing}
+          onClick={props.onSync}
+        >
+          <RefreshCw className={props.syncing ? "animate-spin" : undefined} size={17} aria-hidden="true" />
+          同步
+        </button>
+        <button
+          className="ui-button border-(--color-border) bg-(--color-surface) text-(--color-text)"
+          type="button"
+          onClick={() => props.onThemeChange(nextTheme(props.theme))}
+        >
+          <ThemeIcon theme={props.theme} />
+          {themeLabel(props.theme)}
+        </button>
+      </div>
+    </Drawer>
   );
+}
+
+function RouteLink(props: {
+  readonly id: ViewId;
+  readonly current?: boolean;
+  readonly className: string;
+  readonly children: ReactNode;
+  readonly onSelect: (id: ViewId) => void;
+}) {
+  return (
+    <a
+      className={props.className}
+      href={VIEW_PATHS[props.id]}
+      aria-current={props.current ? "page" : undefined}
+      onClick={(event) => handleRouteClick(event, props.id, props.onSelect)}
+    >
+      {props.children}
+    </a>
+  );
+}
+
+function handleRouteClick(
+  event: ReactMouseEvent<HTMLAnchorElement>,
+  id: ViewId,
+  onSelect: (id: ViewId) => void,
+): void {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  pushViewPath(id);
+  onSelect(id);
 }
 
 function SyncButton(props: { readonly disabled: boolean; readonly syncing: boolean; readonly onSync: () => void }) {
   return (
     <button
-      className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50"
+      className="grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50"
       type="button"
       title="同步"
       aria-label="同步"
       disabled={props.disabled || props.syncing}
       onClick={props.onSync}
     >
-      <RefreshCw className={props.syncing ? "animate-spin" : undefined} size={18} />
+      <RefreshCw className={props.syncing ? "animate-spin" : undefined} size={18} aria-hidden="true" />
     </button>
   );
 }
@@ -161,7 +330,7 @@ function ThemeButton(props: { readonly theme: ThemeMode; readonly onChange: (the
   const next = nextTheme(props.theme);
   return (
     <button
-      className="motion-press grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text)"
+      className="grid h-10 w-10 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text)"
       type="button"
       title={`切换到${themeLabel(next)}`}
       aria-label={`当前主题：${themeLabel(props.theme)}，切换到${themeLabel(next)}`}
@@ -173,9 +342,9 @@ function ThemeButton(props: { readonly theme: ThemeMode; readonly onChange: (the
 }
 
 function ThemeIcon(props: { readonly theme: ThemeMode }) {
-  if (props.theme === "system") return <MonitorCog size={18} />;
-  if (props.theme === "dark") return <Moon size={18} />;
-  return <Sun size={18} />;
+  if (props.theme === "system") return <MonitorCog size={18} aria-hidden="true" />;
+  if (props.theme === "dark") return <Moon size={18} aria-hidden="true" />;
+  return <Sun size={18} aria-hidden="true" />;
 }
 
 function nextTheme(theme: ThemeMode): ThemeMode {
@@ -188,26 +357,4 @@ function themeLabel(theme: ThemeMode): string {
   if (theme === "light") return "浅色";
   if (theme === "dark") return "深色";
   return "跟随系统";
-}
-
-function useNavigationItems() {
-  return useMemo(
-    () =>
-      NAV_ITEMS.map((item) => ({
-        key: item.id as ViewId,
-        icon: <item.icon size={18} />,
-        label: item.label,
-      })),
-    [],
-  );
-}
-
-function selectHome(props: Pick<Parameters<typeof SidebarContent>[0], "onSelect" | "onClose">): void {
-  props.onSelect("home");
-  props.onClose?.();
-}
-
-function selectView(id: ViewId, setViewId: (id: ViewId) => void) {
-  pushViewPath(id);
-  setViewId(id);
 }

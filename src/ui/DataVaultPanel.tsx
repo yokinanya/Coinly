@@ -186,7 +186,7 @@ function SyncSettingsExportModal(props: {
           ? <p className="text-sm text-(--color-text-secondary)">暂无同步源。</p>
           : targets.map((target) => (
             <label key={targetIdentity(target)} className="flex min-h-9 items-center gap-2 text-sm">
-              <Checkbox checked={props.selected === targetIdentity(target)} onChange={() => props.setSelected(targetIdentity(target))} />
+              <Checkbox ariaLabel={`选择同步源 ${target.name || target.provider}`} checked={props.selected === targetIdentity(target)} onChange={() => props.setSelected(targetIdentity(target))} />
               {target.name || target.provider}
             </label>
           ))}
