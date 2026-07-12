@@ -153,7 +153,7 @@ function DesktopSidebar(props: NavigationProps & { readonly onSelect: (id: ViewI
         </nav>
         <footer className={`mt-2 flex items-center border-t border-(--color-border) pt-3 ${collapsed ? "flex-col gap-1" : "justify-between px-2"}`}>
           {!collapsed && <span className="text-xs text-(--color-text-muted)">本地加密账本</span>}
-          <div className="flex gap-1">
+          <div className={`flex gap-1 ${collapsed ? "flex-col" : ""}`}>
             <SyncButton disabled={props.syncDisabled} syncing={props.syncing} onSync={props.onSync} />
             <ThemeButton theme={props.theme} onChange={props.onThemeChange} />
           </div>

@@ -65,7 +65,7 @@ export function VaultGate(props: {
           <PasswordField mode={mode} value={passphrase} onChange={setPassphrase} />
           {mode === "create" && <RecoverySection open={recoveryOpen} toggle={() => setRecoveryOpen((value) => !value)} />}
           {mode === "create" && recoveryOpen && (
-            <div id="vault-recovery-options" className="row-card space-y-3 bg-(--color-surface) p-3">
+            <div id="vault-recovery-options" className="rounded-md border border-(--color-border) bg-(--color-surface-muted) p-3">
               <p className="text-sm text-(--color-text-secondary)">可导入完整账本，或恢复同步源配置。</p>
               <SyncSettingsImportPicker
                 file={syncSettingsFile}
@@ -80,9 +80,9 @@ export function VaultGate(props: {
               />
             </div>
           )}
-          <div className="flex flex-col gap-3 border-t border-(--color-border) pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <RememberPassphrase checked={rememberDevice} onChange={setRememberDevice} />
-            <Button className="w-full sm:w-auto" variant="primary" htmlType="submit" disabled={syncSettingsFile?.loading || fullDataFile?.loading} loading={submitting}>
+          <div className="flex items-center justify-between gap-4 border-t border-(--color-border) pt-4">
+            <RememberPassphrase checked={rememberDevice} onChange={setRememberDevice} />
+            <Button variant="primary" htmlType="submit" disabled={syncSettingsFile?.loading || fullDataFile?.loading} loading={submitting}>
               {submitLabel(mode, syncSettingsFile, fullDataFile)}
             </Button>
           </div>
@@ -120,7 +120,7 @@ function PasswordField(props: {
   readonly onChange: (value: string) => void;
 }) {
   return (
-    <label className="block w-full sm:col-span-2">
+    <label className="block w-full">
       <span className="label">账本口令</span>
       <Input
         className="mt-2 w-full"
@@ -162,20 +162,20 @@ function SyncSettingsImportPicker(props: {
   readonly selectQrImage: (file: File) => string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="mt-3 grid grid-cols-2 gap-2">
       <Upload accept="application/json" beforeUpload={props.selectFullData} maxCount={1} showUploadList={false}>
-        <Button aria-label="导入全量数据文件" title="导入全量数据文件"><UploadIcon size={16} />全量数据</Button>
+        <Button className="w-full justify-start" aria-label="导入全量数据文件" title="导入全量数据文件"><UploadIcon size={16} />全量数据</Button>
       </Upload>
       <Upload accept="application/json" beforeUpload={props.select} maxCount={1} showUploadList={false}>
-        <Button aria-label="导入同步源配置" title="导入同步源配置"><UploadIcon size={16} /></Button>
+        <Button className="w-full justify-start" aria-label="导入同步源配置" title="导入同步源配置"><UploadIcon size={16} />同步配置</Button>
       </Upload>
-      <Button aria-label="扫描二维码" title="扫描二维码" onClick={props.openQrScanner}><Camera size={16} /></Button>
+      <Button className="w-full justify-start" aria-label="扫描二维码" title="扫描二维码" onClick={props.openQrScanner}><Camera size={16} />扫描二维码</Button>
       <Upload accept="image/*" beforeUpload={props.selectQrImage} maxCount={1} showUploadList={false}>
-        <Button aria-label="导入二维码图片" title="导入二维码图片"><ImageUp size={16} /></Button>
+        <Button className="w-full justify-start" aria-label="导入二维码图片" title="导入二维码图片"><ImageUp size={16} />二维码图片</Button>
       </Upload>
-      {props.file && <SelectedSyncSettingsFile file={props.file} clear={props.clear} />}
-      {props.fullDataFile && <SelectedSyncSettingsFile file={props.fullDataFile} clear={props.clearFullData} />}
-      {props.fileError && <span className="text-sm text-red-600">{props.fileError}</span>}
+      {props.file && <div className="col-span-2"><SelectedSyncSettingsFile file={props.file} clear={props.clear} /></div>}
+      {props.fullDataFile && <div className="col-span-2"><SelectedSyncSettingsFile file={props.fullDataFile} clear={props.clearFullData} /></div>}
+      {props.fileError && <span className="col-span-2 text-sm text-red-600">{props.fileError}</span>}
     </div>
   );
 }
