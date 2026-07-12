@@ -7,8 +7,8 @@ import { Button, Checkbox, Input, Select } from "./components";
 import { EmptyState } from "./common";
 import { visibleSelectedIds } from "./transactionSelection";
 
-const DEFAULT_PAGE_SIZE = 50;
-const PAGE_SIZE_OPTIONS = [50, 100, 200] as const;
+const DEFAULT_PAGE_SIZE = 20;
+const PAGE_SIZE_OPTIONS = [20, 50, 100, 200] as const;
 
 interface TransactionTableProps {
   readonly data: AppData;
@@ -130,7 +130,7 @@ function DesktopRowsTable(props: TransactionTableProps & { readonly rows: readon
 
 function MobileRowsList(props: TransactionTableProps & { readonly rows: readonly Transaction[] }) {
   return (
-    <div className="grid min-w-0 gap-3 p-3 md:hidden">
+    <div className="grid min-w-0 gap-2 p-2 md:hidden">
       {props.rows.map((row) => <TransactionCard key={row.id} {...props} row={row} />)}
     </div>
   );
@@ -159,25 +159,25 @@ const TransactionCard = memo(function TransactionCard(props: TransactionTablePro
   const row = props.row;
   const selected = props.selectedIds.includes(row.id);
   return (
-    <article className={`row-card min-w-0 overflow-hidden p-3 ${selected ? "border-(--color-accent) bg-(--color-accent-soft)" : ""}`}>
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3">
+    <article className={`row-card min-w-0 overflow-hidden p-2.5 ${selected ? "border-(--color-accent) bg-(--color-accent-soft)" : ""}`}>
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <Checkbox ariaLabel={`选择交易 ${row.note || TRANSACTION_KIND_LABELS[row.kind]}`} checked={selected} onChange={(checked) => toggleOne(props.selectedIds, row.id, checked, props.setSelectedIds)} />
             <span className="min-w-0 truncate text-xs text-(--color-text-secondary)">{dateOnly(row.occurredAt)} · {TRANSACTION_KIND_LABELS[row.kind]}</span>
           </div>
-          <div className="mt-2 line-clamp-2 wrap-break-word text-sm font-medium" title={row.note || undefined}>{row.note || "无备注"}</div>
+          <div className="mt-1 truncate text-sm font-medium" title={row.note || undefined}>{row.note || "无备注"}</div>
         </div>
         <div className="max-w-34 shrink-0 truncate text-right font-semibold tabular-nums">{money(row.amount, row.currency)}</div>
       </div>
-      <div className="mt-3 grid min-w-0 gap-1 text-xs text-(--color-text-secondary)">
-        <span className="truncate">账户：{props.accounts[row.accountId] ?? "-"}</span>
-        <span className="truncate">分类：{props.categories[row.categoryId ?? ""] ?? "-"}</span>
+      <div className="mt-2 flex min-w-0 gap-3 text-xs text-(--color-text-secondary)">
+        <span className="min-w-0 truncate">账户：{props.accounts[row.accountId] ?? "-"}</span>
+        <span className="min-w-0 truncate">分类：{props.categories[row.categoryId ?? ""] ?? "-"}</span>
       </div>
-      <div className="mt-3 flex flex-nowrap gap-2 border-t border-(--color-border) pt-3">
-        <CompactActionButton label="编辑" icon={<Pencil size={14} />} onClick={() => props.onEdit(row)} />
-        {row.kind === "expense" && <CompactActionButton label="退款" icon={<RotateCcw size={14} />} onClick={() => props.onRefund(row)} />}
-        <CompactActionButton label="删除" icon={<Trash2 size={14} />} variant="danger" onClick={() => props.onDelete(row)} />
+      <div className="mt-1 flex flex-nowrap justify-end gap-1">
+        <CompactActionButton compact label="编辑" icon={<Pencil size={16} />} onClick={() => props.onEdit(row)} />
+        {row.kind === "expense" && <CompactActionButton compact label="退款" icon={<RotateCcw size={16} />} onClick={() => props.onRefund(row)} />}
+        <CompactActionButton compact label="删除" icon={<Trash2 size={16} />} variant="danger" onClick={() => props.onDelete(row)} />
       </div>
     </article>
   );
@@ -202,11 +202,12 @@ function CompactActionButton(props: {
   readonly label: string;
   readonly icon: React.ReactNode;
   readonly variant?: "danger";
+  readonly compact?: boolean;
   readonly onClick: () => void;
 }) {
   return (
     <Button
-      className={`min-w-0 gap-1 px-2 text-xs whitespace-nowrap ${props.variant === "danger" ? "shrink-0" : "shrink-0"}`}
+      className={`shrink-0 whitespace-nowrap ${props.compact ? "ui-button-compact h-8 w-8 min-w-8 px-0" : "min-w-0 gap-1 px-2 text-xs"}`}
       variant={props.variant}
       title={props.label}
       aria-label={props.label}
@@ -229,8 +230,10 @@ function TablePager(props: {
   return (
     <div className="flex flex-col gap-3 border-t border-(--color-border) p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
       <span className="text-(--color-text-secondary)">共 {props.total} 条，第 {props.page} / {props.pages} 页</span>
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={String(props.pageSize)} options={PAGE_SIZE_OPTIONS.map((value) => ({ value: String(value), label: `${value} / 页` }))} onChange={(value) => props.setPageSize(Number(value))} />
+      <div className="flex items-center gap-2">
+        <span className="w-28 shrink-0">
+          <Select value={String(props.pageSize)} options={PAGE_SIZE_OPTIONS.map((value) => ({ value: String(value), label: `${value} / 页` }))} onChange={(value) => props.setPageSize(Number(value))} />
+        </span>
         <Button disabled={props.page <= 1} onClick={() => props.setPage(props.page - 1)}>上一页</Button>
         <Button disabled={props.page >= props.pages} onClick={() => props.setPage(props.page + 1)}>下一页</Button>
       </div>

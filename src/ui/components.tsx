@@ -81,6 +81,7 @@ export function Modal(props: {
   readonly title?: ReactNode;
   readonly footer?: ReactNode;
   readonly children?: ReactNode;
+  readonly bodyClassName?: string;
   readonly centered?: boolean;
   readonly width?: number | string;
   readonly onCancel?: () => void;
@@ -96,7 +97,7 @@ export function Modal(props: {
       <button className="dialog-backdrop" type="button" aria-label="关闭弹窗" onClick={props.onCancel} />
       <section ref={panelRef} className={cn("dialog-panel", props.centered && "dialog-centered")} style={style} role="dialog" aria-modal="true" aria-labelledby={props.title ? titleId : undefined} tabIndex={-1} data-dialog-panel>
         <DialogHeader title={props.title} titleId={titleId} close={props.onCancel} />
-        <div className="dialog-body">{props.children}</div>
+        <div className={cn("dialog-body", props.bodyClassName)}>{props.children}</div>
         <DialogFooter footer={props.footer} ok={props.onOk} cancel={props.onCancel} />
       </section>
     </div>

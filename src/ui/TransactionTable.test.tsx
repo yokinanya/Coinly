@@ -25,6 +25,13 @@ describe("TransactionTable", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "搜索交易" }), { target: { value: "咖啡" } });
     expect(new URLSearchParams(window.location.search).get("q")).toBe("咖啡");
   });
+
+  it("uses 20 rows per page by default", () => {
+    window.history.replaceState(null, "", "/transactions");
+    renderTable();
+
+    expect(screen.getByText("20 / 页")).toBeTruthy();
+  });
 });
 
 function renderTable() {

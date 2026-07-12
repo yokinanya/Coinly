@@ -28,10 +28,11 @@ export function AiProviderManagerDialog(props: {
       open
       title="提供商管理"
       width="min(980px, calc(100vw - 2rem))"
+      bodyClassName="ai-provider-dialog-body"
       footer={<div className="flex justify-end gap-2"><Button onClick={props.onClose}>取消</Button><Button variant="primary" onClick={save}>保存配置</Button></div>}
       onCancel={props.onClose}
     >
-      <div className="space-y-3">
+      <div className="ai-provider-dialog-content">
         <ErrorBanner message={error} />
         <AiProviderManager settings={draft} onChange={(settings) => setDraft(normalizeAiSettings(settings))} />
       </div>
