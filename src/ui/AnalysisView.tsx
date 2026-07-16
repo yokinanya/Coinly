@@ -1,11 +1,11 @@
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
+import { MessageResponse } from "@/components/ai-elements/message";
 import type { AnalysisScope } from "../ai/context";
 import type { AppData } from "../domain/types";
 import { runAiAnalysis } from "./analysisActions";
 import { ErrorBanner, PageHeader, SelectField } from "./common";
 import type { FormOption } from "./common";
-import { MarkdownContent } from "./MarkdownContent";
 import { Button } from "./components";
 
 const ANALYSIS_SCOPE_OPTIONS: readonly FormOption[] = [
@@ -34,7 +34,7 @@ export function AnalysisView(props: { readonly data: AppData }) {
           </Button>
         </div>
         <ErrorBanner message={aiError} />
-        {aiText && <MarkdownContent content={aiText} />}
+        {aiText && <div className="row-card motion-selection p-3 text-sm leading-6"><MessageResponse>{aiText}</MessageResponse></div>}
       </div>
     </section>
   );

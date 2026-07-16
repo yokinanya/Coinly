@@ -1,16 +1,17 @@
 # AI Tools
 
-Coinly uses local intent routing for the chat composer. The user does not choose a task mode.
+Coinly provides a session-scoped financial Copilot. The user writes naturally; the selected model decides whether it needs a read-only ledger query, an analysis context, or transaction candidates.
 
-Typing `@` in the composer opens the tool picker. `@问账`, `@记账`, `@分析`, and `@补全` explicitly override automatic routing for that message. A mention may appear at the beginning or after other text. Tool selection does not change write permissions: transaction and category/tag changes still require confirmation.
+The assistant streams text and concise tool status into the conversation. Completed user and assistant turns are sent with follow-up requests so pronouns and comparisons work across turns. Conversation state remains in application memory while navigating between pages, but it is never added to `AppData`, synced, exported, or restored after a refresh.
 
 - Ledger questions route to read-only ledger queries.
 - Analysis requests route to report generation.
 - Transaction-oriented messages route to draft candidates that require user confirmation.
-- Category and tag requests route to suggestion candidates that require user confirmation.
 - An inserted image is sent to the selected vision-capable session model as an OpenAI-compatible image input.
 
-No AI action writes financial data without an explicit user confirmation in the candidate UI.
+Transaction candidates appear as an editable batch. Valid candidates are selected by default; invalid candidates remain visible with their validation errors. No AI action writes financial data without explicit confirmation in the candidate UI.
+
+OpenAI-compatible chat requests use SSE streaming. A provider that returns a non-SSE response for a streaming request produces an explicit compatibility error. Tool execution is limited to four consecutive rounds per message; reaching that boundary reports an error and asks the user to narrow the request.
 
 ## Provider configuration
 

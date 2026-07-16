@@ -1,141 +1,207 @@
-import { ArrowUp, Bot, Check, ChevronUp, ImagePlus, LoaderCircle, Plus, Settings2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus } from "lucide-react";
+import { useMemo, useState } from "react";
 import { resolveAiModelCapabilities } from "../ai/modelCapabilities";
-import { createAiProvider } from "../ai/provider";
-import { defaultAiSettings, normalizeAiSettings, selectActiveModel, selectActiveProvider, selectTextModel, withAiSelection } from "../ai/settings";
+import { createAiProvider, type AiAssistantEvent } from "../ai/provider";
+import { defaultAiSettings, selectTextModel } from "../ai/settings";
 import { bumpVersion, createId, createTransaction } from "../domain/factory";
-import { upsertTransaction } from "../domain/operations";
-import type { AiSettings, AppData, TransactionDraft } from "../domain/types";
-import { validateTransactionDraft } from "../ai/validation";
-import { Button, FloatingMenu, Input, Upload } from "./components";
-import { money } from "./format";
-import { MarkdownContent } from "./MarkdownContent";
+import { upsertTransaction, validateTransactionDraft as validateDomainDraft } from "../domain/operations";
+import type { AppData } from "../domain/types";
+import { AiComposer } from "./AiComposer";
+import { AiConversation } from "./AiConversation";
+import { sessionDefaultSelectionValue, sessionModelOptions, withSessionModel } from "./aiModelSelection";
+import { candidateBatch, conversationHistory, emptyAiHubSession, revokeSessionAttachments, type AiAttachment, type AiCandidate, type AiHubMessage, type AiHubSession } from "./aiSession";
 import { AiProviderManagerDialog } from "./AiProviderManager";
+import { Button } from "./components";
+import { Message } from "./toastApi";
 
-interface AiHubViewProps { readonly data: AppData; readonly setData: (data: AppData) => void; }
-interface ChatMessage { readonly id: string; readonly role: "assistant" | "user"; readonly text: string; readonly imageUrl?: string; readonly imageName?: string; readonly pending?: boolean; }
-interface AttachedImage { readonly file: File; readonly url: string; }
-interface SessionModelOption { readonly value: string; readonly label: string; readonly providerId: string; readonly providerName: string; }
-
-const WELCOME_MESSAGE: ChatMessage = { id: "welcome", role: "assistant", text: "你可以直接问账、粘贴消费记录，或让我分析账本。" };
+interface AiHubViewProps {
+  readonly data: AppData;
+  readonly setData: (data: AppData) => void;
+  readonly session: AiHubSession;
+  readonly setSession: React.Dispatch<React.SetStateAction<AiHubSession>>;
+}
 
 export function AiHubView(props: AiHubViewProps) {
   const configuredSettings = props.data.aiSettings ?? defaultAiSettings();
-  const modelOptions = useMemo(() => sessionModelOptions(configuredSettings), [configuredSettings]);
-  const [sessionModel, setSessionModel] = useState(() => sessionDefaultSelectionValue(configuredSettings));
-  const selectedModel = modelOptions.some((option) => option.value === sessionModel) ? sessionModel : sessionDefaultSelectionValue(configuredSettings);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [modelEditorOpen, setModelEditorOpen] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [attachedImage, setAttachedImage] = useState<AttachedImage>();
-  const [candidates, setCandidates] = useState<readonly TransactionDraft[]>([]);
-  const [pending, setPending] = useState(false);
-  const [messages, setMessages] = useState<readonly ChatMessage[]>([WELCOME_MESSAGE]);
-  const conversationEndRef = useRef<HTMLDivElement>(null);
-  const modelTriggerRef = useRef<HTMLButtonElement>(null);
-  const requestEpochRef = useRef(0);
-  const imageUrlsRef = useRef(new Set<string>());
+  const options = useMemo(() => sessionModelOptions(configuredSettings), [configuredSettings]);
+  const defaultSelection = sessionDefaultSelectionValue(configuredSettings);
+  const selectedModel = options.some((option) => option.value === props.session.modelSelection)
+    ? props.session.modelSelection as string
+    : defaultSelection;
   const sessionData = useMemo(() => withSessionModel(props.data, selectedModel), [props.data, selectedModel]);
-  const supportsVision = useMemo(() => resolveAiModelCapabilities(selectTextModel(sessionData.aiSettings ?? defaultAiSettings())).supportsVision, [sessionData.aiSettings]);
+  const supportsVision = resolveAiModelCapabilities(selectTextModel(sessionData.aiSettings ?? defaultAiSettings())).supportsVision;
+  const [draft, setDraft] = useState("");
+  const [attachment, setAttachment] = useState<AiAttachment>();
+  const [managerOpen, setManagerOpen] = useState(false);
+  const pending = props.session.messages.some((message) => message.pending);
 
-  useEffect(() => { conversationEndRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" }); }, [messages]);
-
-  const submit = async () => {
+  const submit = () => {
     const text = draft.trim();
-    const image = attachedImage?.file;
-    if ((!text && !image) || pending) return;
-    const requestEpoch = requestEpochRef.current;
-    const pendingId = createId();
+    if ((!text && !attachment) || pending) return;
+    void runTurn({ text, attachment, priorMessages: props.session.messages });
+  };
+
+  const runTurn = async (options: {
+    readonly text: string;
+    readonly attachment?: AiAttachment;
+    readonly priorMessages: readonly AiHubMessage[];
+  }) => {
+    const userMessage = userHubMessage(options.text, options.attachment);
+    const assistantId = createId();
+    const messages = [...options.priorMessages, userMessage, pendingAssistantMessage(assistantId)];
+    const controller = new AbortController();
+    props.setSession((current) => ({ ...current, controller, modelSelection: selectedModel, messages }));
     setDraft("");
-    setAttachedImage(undefined);
-    setMessages((current) => [...current, { id: createId(), role: "user", text, imageUrl: attachedImage?.url, imageName: image?.name }, { id: pendingId, role: "assistant", pending: true, text: "正在处理…" }]);
-    setPending(true);
+    setAttachment(undefined);
     try {
-      const response = await createAiProvider(sessionData.aiSettings).ask(text || "请根据这张图片回答。", sessionData, image);
-      const nextCandidates = response.transactionDrafts.flatMap((draft) => {
-        const result = validateTransactionDraft(draft, sessionData);
-        return result.valid && result.draft ? [result.draft] : [];
+      const stream = createAiProvider(sessionData.aiSettings).streamAssistant({
+        data: sessionData,
+        history: conversationHistory(options.priorMessages),
+        input: options.text,
+        image: options.attachment?.file,
+        signal: controller.signal,
       });
-      if (requestEpoch === requestEpochRef.current) setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: response.answer, pending: false } : message));
-      if (requestEpoch === requestEpochRef.current) setCandidates(nextCandidates);
+      for await (const event of stream) applyAssistantEvent(props.setSession, assistantId, sessionData, event);
     } catch (error) {
-      const failure = error instanceof Error ? error.message : "AI 调用失败";
-      if (requestEpoch === requestEpochRef.current) setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: failure, pending: false } : message));
+      const stopped = abortError(error);
+      updateMessage(props.setSession, assistantId, (message) => ({
+        ...message,
+        pending: false,
+        error: !stopped,
+        text: message.text || (stopped ? "已停止生成。" : errorMessage(error)),
+        tools: message.tools?.map((tool) => tool.state === "running" ? { ...tool, state: "complete", label: "执行已中断" } : tool),
+      }));
     } finally {
-      if (requestEpoch === requestEpochRef.current) setPending(false);
+      props.setSession((current) => current.controller === controller ? { ...current, controller: undefined } : current);
     }
   };
 
+  const regenerate = () => {
+    if (pending) return;
+    const userIndex = findLastUserIndex(props.session.messages);
+    if (userIndex < 0) return;
+    const user = props.session.messages[userIndex];
+    void runTurn({ text: user?.text ?? "", attachment: user?.attachment, priorMessages: props.session.messages.slice(0, userIndex) });
+  };
+
   const newConversation = () => {
-    requestEpochRef.current += 1;
-    for (const url of imageUrlsRef.current) URL.revokeObjectURL(url);
-    imageUrlsRef.current.clear();
-    setMessages([WELCOME_MESSAGE]);
+    props.session.controller?.abort();
+    revokeSessionAttachments(props.session);
+    props.setSession({ ...emptyAiHubSession(), modelSelection: defaultSelection });
+    if (attachment) URL.revokeObjectURL(attachment.url);
+    setAttachment(undefined);
     setDraft("");
-    setAttachedImage(undefined);
-    setCandidates([]);
-    setPending(false);
-    setSessionModel(sessionDefaultSelectionValue(configuredSettings));
+  };
+
+  const saveCandidates = (messageId: string) => {
+    const message = props.session.messages.find((item) => item.id === messageId);
+    const selected = message?.candidates?.filter((candidate) => candidate.selected) ?? [];
+    const invalid = selected.filter((candidate) => !candidate.draft || !validateDomainDraft(props.data, candidate.draft).valid);
+    if (invalid.length > 0) {
+      markInvalidCandidates(props, messageId, invalid);
+      return;
+    }
+    const updated = selected.reduce((data, candidate) => upsertTransaction(data, createTransaction(candidate.draft!)), props.data);
+    props.setData(updated);
+    updateMessage(props.setSession, messageId, (current) => ({
+      ...current,
+      candidates: current.candidates?.filter((candidate) => !selected.some((item) => item.id === candidate.id)),
+    }));
+    Message.success(`已保存 ${selected.length} 笔交易`);
   };
 
   return (
-    <section className="mx-auto flex h-[calc(100svh-6.75rem-var(--safe-top)-var(--safe-bottom))] min-h-120 w-full max-w-5xl flex-col md:h-[calc(100vh-3.25rem-var(--safe-top))]">
-      <h1 className="sr-only">助手</h1>
-      <div className="flex justify-end px-1 pt-2 sm:px-4"><Button className="h-8 min-h-8 px-2" onClick={newConversation} disabled={pending}><Plus size={14} aria-hidden="true" />新会话</Button></div>
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1 pb-6 pt-2 sm:px-4" aria-live="polite">
-        {messages.map((message) => <ChatBubble key={message.id} message={message} />)}
-        {candidates.map((draft, index) => <TransactionCandidate key={`${draft.accountId}-${draft.occurredAt}-${draft.amount}-${index}`} data={props.data} draft={draft} onSave={() => { props.setData(upsertTransaction(props.data, createTransaction(draft))); setCandidates((current) => current.filter((_, currentIndex) => currentIndex !== index)); }} />)}
-        <div ref={conversationEndRef} aria-hidden="true" />
+    <section className="ai-hub">
+      <header className="ai-hub-header">
+        <div><h1>助手</h1><p>连续问账、分析趋势，并确认 AI 生成的交易。</p></div>
+        <Button className="min-h-11" onClick={newConversation} disabled={pending}><Plus size={15} aria-hidden="true" />新会话</Button>
+      </header>
+      <AiConversation
+        data={props.data}
+        messages={props.session.messages}
+        pending={pending}
+        onSuggestion={(text) => void runTurn({ text, priorMessages: props.session.messages })}
+        onRegenerate={regenerate}
+        onCopy={(text) => navigator.clipboard.writeText(text).then(() => Message.success("已复制回答")).catch(() => Message.error("复制失败"))}
+        onCandidatesChange={(messageId, candidates) => updateMessage(props.setSession, messageId, (message) => ({ ...message, candidates }))}
+        onCandidatesSave={saveCandidates}
+      />
+      <div className="ai-composer-shell">
+        <AiComposer
+          draft={draft}
+          attachment={attachment}
+          options={options}
+          selectedModel={selectedModel}
+          supportsVision={supportsVision}
+          pending={pending}
+          setDraft={setDraft}
+          setAttachment={setAttachment}
+          selectModel={(modelSelection) => props.setSession((current) => ({ ...current, modelSelection }))}
+          openManager={() => setManagerOpen(true)}
+          submit={submit}
+          stop={() => props.session.controller?.abort()}
+        />
       </div>
-      <form className="ai-composer mx-1 mb-1 sm:mx-4" aria-label="AI 消息" onSubmit={(event) => { event.preventDefault(); submit(); }}>
-        <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} value={draft} onChange={(value) => setDraft(String(value))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} name="ai-message" autoComplete="off" aria-label="输入消息" placeholder="输入消息" />
-        {attachedImage && <div className="ai-image-attachment"><ImagePlus size={15} aria-hidden="true" /><span className="min-w-0 truncate">{attachedImage.file.name}</span><button type="button" aria-label="移除图片" title="移除图片" onClick={() => { URL.revokeObjectURL(attachedImage.url); imageUrlsRef.current.delete(attachedImage.url); setAttachedImage(undefined); }}><X size={14} aria-hidden="true" /></button></div>}
-        <div className="flex min-h-9 items-center justify-between gap-3">
-          <Upload accept="image/*" beforeUpload={(file) => { const url = URL.createObjectURL(file); imageUrlsRef.current.add(url); setAttachedImage({ file, url }); return Upload.LIST_IGNORE; }} disabled={!supportsVision} maxCount={1} showUploadList={false}>
-            <button className="grid h-9 w-9 place-items-center rounded-md text-(--color-text-secondary) hover:bg-(--color-surface-muted) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50" type="button" aria-label="插入图片" title={supportsVision ? "插入图片" : "当前模型不支持图片"} disabled={!supportsVision}><ImagePlus size={18} aria-hidden="true" /></button>
-          </Upload>
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-            <button ref={modelTriggerRef} className="ai-model-trigger" type="button" aria-label="切换模型" aria-haspopup="menu" aria-expanded={modelMenuOpen} onClick={() => setModelMenuOpen((open) => !open)}><span className="min-w-0 truncate">{modelOptions.find((option) => option.value === selectedModel)?.label ?? "选择模型"}</span><ChevronUp className="shrink-0" size={14} aria-hidden="true" /></button>
-            {modelMenuOpen && <ModelMenu options={modelOptions} selectedModel={selectedModel} triggerRef={modelTriggerRef} close={() => setModelMenuOpen(false)} selectModel={setSessionModel} openManager={() => setModelEditorOpen(true)} />}
-            <Button className="ai-send-button size-9 min-h-9 rounded-md p-0" variant="primary" htmlType="submit" aria-label="发送" title="发送" loading={pending} disabled={(!draft.trim() && !attachedImage) || pending}><ArrowUp size={18} strokeWidth={2.5} aria-hidden="true" /></Button>
-          </div>
-        </div>
-      </form>
-      {modelEditorOpen && <AiProviderManagerDialog settings={configuredSettings} onClose={() => setModelEditorOpen(false)} onSave={(settings) => { props.setData(bumpVersion({ ...props.data, aiSettings: settings })); setSessionModel(sessionDefaultSelectionValue(settings)); setModelEditorOpen(false); }} />}
+      {managerOpen && <AiProviderManagerDialog settings={configuredSettings} onClose={() => setManagerOpen(false)} onSave={(settings) => {
+        props.setData(bumpVersion({ ...props.data, aiSettings: settings }));
+        props.setSession((current) => ({ ...current, modelSelection: sessionDefaultSelectionValue(settings) }));
+        setManagerOpen(false);
+      }} />}
     </section>
   );
 }
 
-function ModelMenu(props: { readonly options: readonly SessionModelOption[]; readonly selectedModel: string; readonly triggerRef: React.RefObject<HTMLButtonElement | null>; readonly close: () => void; readonly selectModel: (value: string) => void; readonly openManager: () => void; }) {
-  return <FloatingMenu triggerRef={props.triggerRef} close={props.close} preferredHeight={240}><div className="ai-model-menu" role="menu" aria-label="模型列表">{props.options.map((option, index) => <div key={option.value}>{(index === 0 || props.options[index - 1]?.providerId !== option.providerId) && <div className="ai-model-provider-label">{option.providerName}</div>}<button className={option.value === props.selectedModel ? "ai-model-option ai-model-option-selected" : "ai-model-option"} type="button" role="menuitemradio" aria-checked={option.value === props.selectedModel} onClick={() => { props.selectModel(option.value); props.close(); }}><span className="min-w-0 truncate">{option.label}</span>{option.value === props.selectedModel && <Check size={15} aria-hidden="true" />}</button></div>)}<div className="border-t border-(--color-border) pt-1"><button className="ai-model-option" type="button" role="menuitem" onClick={() => { props.close(); props.openManager(); }}><Settings2 size={15} aria-hidden="true" />管理模型</button></div></div></FloatingMenu>;
+function applyAssistantEvent(
+  setSession: AiHubViewProps["setSession"],
+  messageId: string,
+  data: AppData,
+  event: AiAssistantEvent,
+): void {
+  updateMessage(setSession, messageId, (message) => {
+    if (event.type === "text-delta") return { ...message, text: message.text + event.text };
+    if (event.type === "tool-start") return { ...message, tools: [...(message.tools ?? []), { callId: event.callId, tool: event.tool, label: event.label, state: "running" }] };
+    if (event.type === "tool-complete") return { ...message, tools: message.tools?.map((tool) => tool.callId === event.callId ? { ...tool, label: event.label, state: "complete" } : tool) };
+    if (event.type === "candidate-batch") return { ...message, candidates: [...(message.candidates ?? []), ...candidateBatch(data, event.drafts)] };
+    return { ...message, text: event.text, pending: false };
+  });
 }
 
-function sessionModelOptions(settings: NonNullable<AppData["aiSettings"]>): readonly SessionModelOption[] {
-  const normalized = normalizeAiSettings(settings);
-  return normalized.providers.flatMap((provider) => provider.models.filter((model) => model.model).map((model) => ({ value: modelSelectionValue(provider.id, model.id), label: model.name || model.model, providerId: provider.id, providerName: provider.name })));
+function updateMessage(setSession: AiHubViewProps["setSession"], id: string, update: (message: AiHubMessage) => AiHubMessage): void {
+  setSession((session) => ({ ...session, messages: session.messages.map((message) => message.id === id ? update(message) : message) }));
 }
 
-function withSessionModel(data: AppData, selection: string): AppData {
-  const settings = normalizeAiSettings(data.aiSettings ?? defaultAiSettings());
-  const [providerId, modelId] = selection.split("::");
-  return { ...data, aiSettings: withAiSelection(settings, providerId || settings.activeProviderId, modelId || settings.activeModelId) };
+function markInvalidCandidates(props: AiHubViewProps, messageId: string, invalid: readonly AiCandidate[]): void {
+  updateMessage(props.setSession, messageId, (message) => ({
+    ...message,
+    candidates: message.candidates?.map((candidate) => {
+      if (!invalid.some((item) => item.id === candidate.id)) return candidate;
+      const errors = candidate.draft ? validateDomainDraft(props.data, candidate.draft).errors : candidate.errors;
+      return { ...candidate, errors };
+    }),
+  }));
+  window.requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-candidate-id="${invalid[0]?.id}"]`)?.focus());
+  Message.error("请先修正所选交易中的错误");
 }
 
-function sessionDefaultSelectionValue(settings: AiSettings): string {
-  const normalized = normalizeAiSettings(settings);
-  const provider = selectActiveProvider(normalized);
-  const model = provider.models.find((item) => item.id === provider.defaultModelId) ?? selectActiveModel(normalized);
-  return modelSelectionValue(provider.id, model.id);
+function userHubMessage(text: string, attachment?: AiAttachment): AiHubMessage {
+  return { id: createId(), role: "user", text, attachment };
 }
 
-function modelSelectionValue(providerId: string, modelId: string): string { return `${providerId}::${modelId}`; }
-
-function ChatBubble(props: { readonly message: ChatMessage }) {
-  const assistant = props.message.role === "assistant";
-  return <div className={`flex gap-3 ${assistant ? "items-start" : "justify-end"}`}>{assistant && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-(--color-surface) text-(--color-accent) shadow-sm"><Bot size={16} aria-hidden="true" /></span>}<div className={assistant ? "min-w-0 max-w-3xl pt-1 text-sm text-(--color-text)" : "max-w-[min(36rem,82%)] rounded-md bg-(--color-surface-muted) px-3 py-2 text-sm text-(--color-text)"}>{props.message.pending ? <span className="inline-flex items-center gap-2 text-(--color-text-secondary)"><LoaderCircle className="animate-spin" size={14} aria-hidden="true" />{props.message.text}</span> : <>{props.message.imageUrl && <img className="mb-2 max-h-72 max-w-full rounded-md object-contain" src={props.message.imageUrl} alt={props.message.imageName || "已发送图片"} />}{props.message.text && (assistant ? <MarkdownContent plain content={props.message.text} /> : props.message.text)}</>}</div></div>;
+function pendingAssistantMessage(id: string): AiHubMessage {
+  return { id, role: "assistant", text: "", pending: true, tools: [], candidates: [] };
 }
 
-function TransactionCandidate(props: { readonly data: AppData; readonly draft: TransactionDraft; readonly onSave: () => void }) {
-  const account = props.data.accounts.find((account) => account.id === props.draft.accountId)?.name ?? "未匹配账户";
-  return <section className="ml-11 max-w-md border border-(--color-accent) bg-(--color-surface) p-3 text-sm"><p className="font-medium">待确认交易</p><p className="mt-1 text-(--color-text-secondary)">{money(props.draft.amount, props.draft.currency)} · {account} · {props.draft.occurredAt}</p>{props.draft.note && <p className="mt-1 text-(--color-text-secondary)">{props.draft.note}</p>}<div className="mt-3 flex justify-end"><Button variant="primary" onClick={props.onSave}>保存交易</Button></div></section>;
+function findLastUserIndex(messages: readonly AiHubMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") return index;
+  }
+  return -1;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "AI 调用失败";
+}
+
+function abortError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "name" in error && error.name === "AbortError");
 }

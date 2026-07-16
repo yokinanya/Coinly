@@ -176,10 +176,6 @@ function entityOptions(items: readonly { readonly id: string; readonly name: str
   return items.map((item) => option(item.id, item.name));
 }
 
-function kindOptions(): readonly FormOption[] {
-  return TRANSACTION_KINDS.map((kind) => option(kind, TRANSACTION_KIND_LABELS[kind]));
-}
-
 function currencyOptions(account: AppData["accounts"][number] | undefined): readonly FormOption[] {
   return (account ? accountCurrencyOptions(account) : []).map((currency) => option(currency, currency));
 }

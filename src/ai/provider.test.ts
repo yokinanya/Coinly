@@ -115,23 +115,21 @@ describe("parseText", () => {
   });
 });
 
-describe("ask", () => {
-  it("lets the model choose a read-only ledger tool before answering", async () => {
+describe("streamAssistant", () => {
+  it("lets the model choose a read-only ledger tool before streaming an answer", async () => {
     const requests: Record<string, unknown>[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       if (requests.length === 1) {
-        return new Response(JSON.stringify({
-          choices: [{ message: {
-            tool_calls: [{
-              id: "call-query",
-              type: "function",
-              function: { name: "query_ledger", arguments: JSON.stringify({ question: "本月餐饮花了多少？" }) },
-            }],
-          } }],
-        }), { status: 200 });
+        return sseResponse([
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-query", type: "function", function: { name: "query_ledger", arguments: "{\"question\":\"本月餐饮" } }] } }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "花了多少？\"}" } }] } }] },
+        ]);
       }
-      return new Response(JSON.stringify({ choices: [{ message: { content: "本月餐饮支出为 38 CNY。" } }] }), { status: 200 });
+      return sseResponse([
+        { choices: [{ delta: { content: "本月餐饮支出" } }] },
+        { choices: [{ delta: { content: "为 38 CNY。" } }] },
+      ]);
     }));
     const provider = createAiProvider({
       provider: "openai-compatible",
@@ -141,12 +139,73 @@ describe("ask", () => {
       visionModel: { model: "vision-model", supportsVision: true },
     });
 
-    await expect(provider.ask("本月餐饮花了多少？", initialData())).resolves.toEqual({ answer: "本月餐饮支出为 38 CNY。", transactionDrafts: [] });
+    const events = [];
+    for await (const event of provider.streamAssistant({ data: initialData(), history: [], input: "本月餐饮花了多少？" })) {
+      events.push(event);
+    }
 
     expect(requests).toHaveLength(2);
-    expect(requests[0]).toMatchObject({ model: "tool-model", tool_choice: "auto" });
+    expect(requests[0]).toMatchObject({ model: "tool-model", stream: true, tool_choice: "auto" });
     expect(requests[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: "query_ledger" }) })]));
     expect(requests[1]?.messages).toEqual(expect.arrayContaining([expect.objectContaining({ role: "tool", tool_call_id: "call-query" })]));
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "tool-start", tool: "query_ledger" }),
+      expect.objectContaining({ type: "tool-complete", label: "已查询账本" }),
+      { type: "text-delta", text: "本月餐饮支出" },
+      { type: "text-delta", text: "为 38 CNY。" },
+      { type: "finish", text: "本月餐饮支出为 38 CNY。" },
+    ]));
+  });
+
+  it("sends completed conversation history with a follow-up turn", async () => {
+    const requests: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return sseResponse([{ choices: [{ delta: { content: "回答" } }] }]);
+    }));
+    const provider = createAiProvider({
+      provider: "openai-compatible",
+      endpoint: "https://api.example/v1",
+      apiKey: "key",
+      textModel: { model: "tool-model" },
+    });
+
+    await consume(provider.streamAssistant({
+      data: initialData(),
+      history: [
+        { role: "user", text: "本月餐饮多少？" },
+        { role: "assistant", text: "本月为 38 CNY。" },
+      ],
+      input: "那上月呢？",
+    }));
+
+    expect(requests[0]?.messages).toEqual([
+      expect.objectContaining({ role: "system" }),
+      { role: "user", content: "本月餐饮多少？" },
+      { role: "assistant", content: "本月为 38 CNY。" },
+      { role: "user", content: "那上月呢？" },
+    ]);
+  });
+
+  it("fails explicitly after four consecutive tool rounds", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse([{
+      choices: [{ delta: { tool_calls: [{
+        index: 0,
+        id: "call-query",
+        type: "function",
+        function: { name: "query_ledger", arguments: "{\"question\":\"继续查询\"}" },
+      }] } }],
+    }])));
+    const provider = createAiProvider({
+      provider: "openai-compatible",
+      endpoint: "https://api.example/v1",
+      apiKey: "key",
+      textModel: { model: "tool-model" },
+    });
+
+    await expect(consume(provider.streamAssistant({ data: initialData(), history: [], input: "复杂问题" })))
+      .rejects.toThrow("工具调用次数过多");
+    expect(fetch).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -201,4 +260,14 @@ function sampleDraft() {
     tagIds: [],
     note: "午餐",
   };
+}
+
+function sseResponse(chunks: readonly unknown[]): Response {
+  const body = chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
+  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
+async function consume(stream: AsyncGenerator<unknown, unknown>): Promise<void> {
+  let next = await stream.next();
+  while (!next.done) next = await stream.next();
 }

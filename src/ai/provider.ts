@@ -1,8 +1,16 @@
 import type { AiModelSettings, AiSettings, AppData, TransactionDraft } from "../domain/types";
-import { analysisScopeLabel, buildAnalysisContext, buildDraftSystemPrompt, buildQueryContext, buildSuggestionContext, type AnalysisScope } from "./context";
+import { analysisScopeLabel, buildAnalysisContext, buildDraftSystemPrompt, buildSuggestionContext, type AnalysisScope } from "./context";
+import { runAssistant } from "./assistant";
+import type { AiAssistantEvent, AiAssistantRequest, AiAssistantResult } from "./assistantTypes";
+import { readFileAsDataUrl } from "./media";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
+import { chatCompletionsUrl, requestChatCompletion } from "./openAiTransport";
+import { parseDraftArrayContent, parseDraftContent, parseSuggestionContent } from "./responseParsing";
 import { defaultAiSettings, normalizeAiSettings, selectTextModel, withAiSelection, type NormalizedAiSettings } from "./settings";
 import type { CategoryTagSuggestion } from "./validation";
+
+export { chatCompletionsUrl, parseDraftArrayContent, parseDraftContent };
+export type { AiAssistantEvent, AiAssistantRequest, AiAssistantResult };
 
 export interface AiProvider {
   parseText(input: string, data: AppData): Promise<TransactionDraft>;
@@ -10,12 +18,7 @@ export interface AiProvider {
   parseTextBatch(input: string, data: AppData): Promise<readonly TransactionDraft[]>;
   suggestCategoryTag(transaction: TransactionDraft, data: AppData): Promise<CategoryTagSuggestion>;
   analyze(data: AppData, options?: { readonly scope?: AnalysisScope }): Promise<string>;
-  ask(question: string, data: AppData, image?: File): Promise<AiAssistantResponse>;
-}
-
-export interface AiAssistantResponse {
-  readonly answer: string;
-  readonly transactionDrafts: readonly TransactionDraft[];
+  streamAssistant(request: AiAssistantRequest): AsyncGenerator<AiAssistantEvent, AiAssistantResult>;
 }
 
 export function buildAnalysisInput(data: AppData): string {
@@ -25,69 +28,9 @@ export function buildAnalysisInput(data: AppData): string {
 
 interface ChatResponse {
   readonly choices: readonly {
-    readonly message?: {
-      readonly content?: string;
-      readonly tool_calls?: readonly ToolCall[];
-    };
+    readonly message?: { readonly content?: string };
   }[];
 }
-
-interface ToolCall {
-  readonly id: string;
-  readonly type: "function";
-  readonly function: {
-    readonly name: string;
-    readonly arguments: string;
-  };
-}
-
-const LEDGER_TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "query_ledger",
-      description: "查询账本的交易、分类、标签、预算和汇总数据。回答任何金额、消费、收入、类别或交易问题前都应调用。",
-      parameters: {
-        type: "object",
-        properties: { question: { type: "string", description: "需要在账本中核对的具体问题" } },
-        required: ["question"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "analyze_ledger",
-      description: "按时间范围生成账本的聚合分析数据。仅在用户明确要求分析、趋势、报告、总结或风险时调用。",
-      parameters: {
-        type: "object",
-        properties: {
-          scope: {
-            type: "string",
-            enum: ["current-month", "last-3-months", "last-6-months", "year-to-date"],
-            description: "分析时间范围",
-          },
-        },
-        required: ["scope"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "prepare_transaction",
-      description: "当用户要求记录、记账、添加或创建交易时调用。工具只生成待确认交易，绝不会直接保存。",
-      parameters: {
-        type: "object",
-        properties: { input: { type: "string", description: "需要解析的交易描述；图片场景可复述用户意图" } },
-        required: ["input"],
-        additionalProperties: false,
-      },
-    },
-  },
-] as const;
 
 export function createAiProvider(settings?: AiSettings): AiProvider {
   const normalized = normalizeAiSettings(settings ?? defaultAiSettings());
@@ -120,7 +63,7 @@ class OpenAiCompatibleProvider implements AiProvider {
     const visionSettings = selectVisionSettings(this.settings);
     const model = visionSettings.textModel;
     assertVisionSupported(model);
-    const dataUrl = await readAsDataUrl(image);
+    const dataUrl = await readFileAsDataUrl(image);
     return requestDraft(visionSettings, model, [
       buildDraftSystemPrompt(data, { settings: model }),
       {
@@ -156,15 +99,8 @@ class OpenAiCompatibleProvider implements AiProvider {
     return parseSuggestionContent(content);
   }
 
-  async ask(question: string, data: AppData, image?: File): Promise<AiAssistantResponse> {
-    const model = this.settings.textModel;
-    const content = image
-      ? await imageQueryContent(model, question, image)
-      : question;
-    return requestToolAssistedAnswer(this.settings, model, data, image, question, [
-      { role: "system", content: askPrompt() },
-      { role: "user", content },
-    ]);
+  streamAssistant(request: AiAssistantRequest): AsyncGenerator<AiAssistantEvent, AiAssistantResult> {
+    return runAssistant(this.settings, this.settings.textModel, request);
   }
 }
 
@@ -190,14 +126,6 @@ function selectVisionSettings(settings: NormalizedAiSettings): NormalizedAiSetti
     if (model) return withAiSelection(settings, provider.id, model.id);
   }
   return settings;
-}
-
-async function imageQueryContent(model: AiModelSettings, context: string, image: File): Promise<readonly unknown[]> {
-  assertVisionSupported(model);
-  return [
-    { type: "text", text: context },
-    { type: "image_url", image_url: { url: await readAsDataUrl(image) } },
-  ];
 }
 
 function analysisPrompt(scopeLabel: string): string {
@@ -228,99 +156,6 @@ function suggestionPrompt(context: unknown): string {
   ].join("\n");
 }
 
-function askPrompt(): string {
-  return [
-    "你是 Coinly 的只读问账助手。需要账本事实时，必须通过提供的工具获取数据；不要编造数据。",
-    "你自行判断是否以及何时调用工具，不要向用户展示工具、模式或内部路由。",
-    "prepare_transaction 只生成待用户确认的候选交易，调用后必须明确说明尚未保存，等待用户确认。",
-    "绝不能声称已经创建、修改或删除交易、分类、标签、预算或订阅。",
-    "涉及金额时必须带币种代码或币种名称。没有足够数据时直接说明无法确定。",
-    "输出简洁中文 Markdown；能给出可核对的分类、时间范围或交易备注时就写清楚。",
-  ].join("\n");
-}
-
-async function requestToolAssistedAnswer(
-  settings: NormalizedAiSettings,
-  model: AiModelSettings,
-  data: AppData,
-  image: File | undefined,
-  userQuestion: string,
-  initialMessages: readonly unknown[],
-): Promise<AiAssistantResponse> {
-  const messages: unknown[] = [...initialMessages];
-  const transactionDrafts: TransactionDraft[] = [];
-  for (let round = 0; round < 4; round += 1) {
-    const response = await requestChat(settings, model, messages, { tools: LEDGER_TOOLS });
-    const message = response.choices[0]?.message;
-    const calls = message?.tool_calls ?? [];
-    if (calls.length === 0) return { answer: message?.content ?? "", transactionDrafts };
-    messages.push({ role: "assistant", content: message?.content ?? "", tool_calls: calls });
-    for (const call of calls) {
-      const result = await executeLedgerTool(call, data, model, settings, image, userQuestion);
-      transactionDrafts.push(...result.transactionDrafts);
-      messages.push({
-        role: "tool",
-        tool_call_id: call.id,
-        content: JSON.stringify(result.content),
-      });
-    }
-  }
-  throw new Error("AI 工具调用次数过多，请缩小问题范围后重试");
-}
-
-async function executeLedgerTool(
-  call: ToolCall,
-  data: AppData,
-  model: AiModelSettings,
-  settings: NormalizedAiSettings,
-  image: File | undefined,
-  userQuestion: string,
-): Promise<{ readonly content: unknown; readonly transactionDrafts: readonly TransactionDraft[] }> {
-  let argumentsValue: Record<string, unknown>;
-  try {
-    argumentsValue = JSON.parse(call.function.arguments) as Record<string, unknown>;
-  } catch {
-    return { content: { error: "工具参数不是合法 JSON" }, transactionDrafts: [] };
-  }
-  if (call.function.name === "query_ledger") {
-    const question = typeof argumentsValue.question === "string" ? argumentsValue.question : "";
-    return { content: question ? buildQueryContext(data, question, { settings: model }) : { error: "缺少 question 参数" }, transactionDrafts: [] };
-  }
-  if (call.function.name === "analyze_ledger") {
-    const scope = argumentsValue.scope;
-    return { content: isAnalysisScope(scope)
-      ? buildAnalysisContext(data, { settings: model, analysisScope: scope })
-      : { error: "scope 参数无效" }, transactionDrafts: [] };
-  }
-  if (call.function.name === "prepare_transaction") {
-    const input = typeof argumentsValue.input === "string" && argumentsValue.input.trim() ? argumentsValue.input : userQuestion;
-    const drafts = await prepareTransactionDrafts(settings, model, data, input, image);
-    return { content: { candidates: drafts, requiresConfirmation: true }, transactionDrafts: drafts };
-  }
-  return { content: { error: `不允许调用工具 ${call.function.name}` }, transactionDrafts: [] };
-}
-
-async function prepareTransactionDrafts(settings: NormalizedAiSettings, model: AiModelSettings, data: AppData, input: string, image?: File): Promise<readonly TransactionDraft[]> {
-  if (image) {
-    const visionSettings = selectVisionSettings(settings);
-    const visionModel = visionSettings.textModel;
-    assertVisionSupported(visionModel);
-    const draft = await requestDraft(visionSettings, visionModel, [
-      buildDraftSystemPrompt(data, { settings: visionModel }),
-      { role: "user", content: [{ type: "text", text: `根据图片和用户意图解析交易，只返回 TransactionDraft JSON：${input}` }, { type: "image_url", image_url: { url: await readAsDataUrl(image) } }] },
-    ]);
-    return [draft];
-  }
-  return requestDrafts(settings, model, [
-    buildDraftSystemPrompt(data, { settings: model, input, mode: "batch" }),
-    { role: "user", content: `解析交易描述，只返回 TransactionDraft JSON 数组：${input}` },
-  ]);
-}
-
-function isAnalysisScope(value: unknown): value is AnalysisScope {
-  return value === "current-month" || value === "last-3-months" || value === "last-6-months" || value === "year-to-date";
-}
-
 async function requestDraft(settings: NormalizedAiSettings, model: AiModelSettings, messages: readonly unknown[]): Promise<TransactionDraft> {
   const response = await requestChat(settings, model, messages);
   const content = response.choices[0]?.message?.content;
@@ -345,154 +180,5 @@ async function requestChat(
   messages: readonly unknown[],
   options: { readonly tools?: readonly unknown[] } = {},
 ): Promise<ChatResponse> {
-  if (!model.model.trim()) {
-    throw new Error("请先在设置中配置 AI 模型");
-  }
-  const response = await fetch(chatCompletionsUrl(settings.endpoint), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${settings.apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ model: model.model, messages, ...(options.tools ? { tools: options.tools, tool_choice: "auto" } : {}) }),
-  });
-  if (!response.ok) {
-    throw new Error(`AI 调用失败：${response.status} ${response.statusText}`);
-  }
-  return response.json() as Promise<ChatResponse>;
-}
-
-export function chatCompletionsUrl(baseUrl: string): string {
-  const trimmed = baseUrl.trim().replace(/\/+$/, "");
-  if (trimmed.endsWith("/chat/completions")) {
-    throw new Error("AI Base URL 不能包含 /chat/completions");
-  }
-  if (!trimmed) {
-    throw new Error("AI Base URL 不能为空");
-  }
-  return `${trimmed}/chat/completions`;
-}
-
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(file);
-  });
-}
-
-export function parseDraftContent(content: string): TransactionDraft {
-  const json = extractJsonObject(content);
-  try {
-    return JSON.parse(json) as TransactionDraft;
-  } catch (error) {
-    const message = error instanceof Error ? `AI 返回的 JSON 无法解析：${error.message}` : "AI 返回的 JSON 无法解析";
-    throw new Error(message, { cause: error });
-  }
-}
-
-export function parseDraftArrayContent(content: string): readonly TransactionDraft[] {
-  const json = extractJsonArray(content);
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    if (!Array.isArray(parsed)) {
-      throw new Error("不是 JSON 数组");
-    }
-    return parsed as TransactionDraft[];
-  } catch (error) {
-    const message = error instanceof Error ? `AI 返回的 JSON 数组无法解析：${error.message}` : "AI 返回的 JSON 数组无法解析";
-    throw new Error(message, { cause: error });
-  }
-}
-
-function parseSuggestionContent(content: string): CategoryTagSuggestion {
-  const json = extractJsonObject(content);
-  try {
-    return JSON.parse(json) as CategoryTagSuggestion;
-  } catch (error) {
-    const message = error instanceof Error ? `AI 返回的分类标签建议无法解析：${error.message}` : "AI 返回的分类标签建议无法解析";
-    throw new Error(message, { cause: error });
-  }
-}
-
-function extractJsonObject(content: string): string {
-  const trimmed = content.trim();
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]?.trim();
-  if (fenced?.startsWith("{") && fenced.endsWith("}")) return fenced;
-  const object = balancedObject(trimmed);
-  if (object) return object;
-  throw new Error("AI 未返回 TransactionDraft JSON 对象");
-}
-
-function extractJsonArray(content: string): string {
-  const trimmed = content.trim();
-  if (trimmed.startsWith("[") && trimmed.endsWith("]")) return trimmed;
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]?.trim();
-  if (fenced?.startsWith("[") && fenced.endsWith("]")) return fenced;
-  const firstObject = trimmed.indexOf("{");
-  const firstArray = trimmed.indexOf("[");
-  if (firstArray < 0 || (firstObject >= 0 && firstObject < firstArray)) {
-    throw new Error("AI 未返回 TransactionDraft JSON 数组");
-  }
-  const array = balancedArray(trimmed);
-  if (array) return array;
-  throw new Error("AI 未返回 TransactionDraft JSON 数组");
-}
-
-function balancedObject(value: string): string | undefined {
-  const start = value.indexOf("{");
-  if (start < 0) return undefined;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let index = start; index < value.length; index += 1) {
-    const char = value[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = inString;
-      continue;
-    }
-    if (char === "\"") {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-    if (char === "{") depth += 1;
-    if (char === "}") depth -= 1;
-    if (depth === 0) return value.slice(start, index + 1);
-  }
-  return undefined;
-}
-
-function balancedArray(value: string): string | undefined {
-  const start = value.indexOf("[");
-  if (start < 0) return undefined;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let index = start; index < value.length; index += 1) {
-    const char = value[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = inString;
-      continue;
-    }
-    if (char === "\"") {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-    if (char === "[") depth += 1;
-    if (char === "]") depth -= 1;
-    if (depth === 0) return value.slice(start, index + 1);
-  }
-  return undefined;
+  return requestChatCompletion(settings, model, messages, options);
 }

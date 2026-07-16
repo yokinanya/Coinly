@@ -7,6 +7,7 @@ import type { StoredVaultState } from "../storage/indexedDb";
 import { syncData, type SyncResult } from "../sync/syncClient";
 import type { StatsFilter } from "./StatsView";
 import { VaultGate } from "./VaultGate";
+import { emptyAiHubSession, type AiHubSession } from "./aiSession";
 import { NavigationSidebar } from "./appNavigation";
 import { replaceUnknownPath, VIEW_PATHS, viewFromPath, type ViewId } from "./appRoutes";
 import { StatusBar } from "./common";
@@ -39,6 +40,7 @@ export function App() {
   const saveTokenRef = useRef<SaveToken>({ version: 0 });
   const [saveToken, setSaveToken] = useState<SaveToken>({ version: 0 });
   const [viewId, setViewId] = useState<ViewId>(() => viewFromPath(window.location.pathname));
+  const [aiSession, setAiSession] = useState<AiHubSession>(() => emptyAiHubSession());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [syncResolution, setSyncResolution] = useState<SyncResolution>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "info", text: "正在加载本地账本" });
@@ -86,7 +88,10 @@ export function App() {
     applyTheme(data?.uiSettings?.theme ?? "system");
   }, [data?.uiSettings?.theme]);
 
-  const content = useMemo(() => renderView({ viewId, data, token: saveToken, setData, setVaultData, setStatus, setViewId }), [viewId, data, saveToken, setData, setVaultData, setStatus]);
+  const content = useMemo(
+    () => renderView({ viewId, data, token: saveToken, aiSession, setAiSession, setData, setVaultData, setStatus, setViewId }),
+    [viewId, data, saveToken, aiSession, setData, setVaultData, setStatus],
+  );
 
   if (!data) {
     if (storedVault) {
@@ -267,6 +272,8 @@ function renderView(options: {
   readonly viewId: ViewId;
   readonly data: AppData | undefined;
   readonly token: SaveToken;
+  readonly aiSession: AiHubSession;
+  readonly setAiSession: React.Dispatch<React.SetStateAction<AiHubSession>>;
   readonly setData: (data: AppData | undefined) => void;
   readonly setVaultData: (data: AppData) => void;
   readonly setStatus: (status: StatusMessage) => void;
@@ -282,7 +289,7 @@ function renderView(options: {
   if (options.viewId === "accounts") return <AccountsView {...props} />;
   if (options.viewId === "budget") return <BudgetView {...props} />;
   if (options.viewId === "stats") return <StatsView data={options.data} onFilter={(filter) => navigateToTransactions(filter, options.setViewId)} />;
-  if (options.viewId === "ai") return <AiHubView {...props} />;
+  if (options.viewId === "ai") return <AiHubView {...props} session={options.aiSession} setSession={options.setAiSession} />;
   if (options.viewId === "categories") return <CategoriesView {...props} />;
   if (options.viewId === "recurring") return <RecurringView {...props} />;
   if (options.viewId === "settings") return <SettingsView data={options.data} token={options.token} setData={options.setData} setVaultData={options.setVaultData} />;
