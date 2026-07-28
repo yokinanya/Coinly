@@ -171,6 +171,7 @@ export interface AiSettings {
   readonly model?: string;
   readonly contextTokenBudget?: number;
   readonly supportsVision?: boolean;
+  readonly defaultPaymentAccountId?: string;
 }
 
 export interface UiSettings {

@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { MessageResponse } from "@/components/ai-elements/message";
-import type { AnalysisScope } from "../ai/context";
+import type { AnalysisScope } from "../ai/analysisContext";
 import type { AppData } from "../domain/types";
 import { runAiAnalysis } from "./analysisActions";
 import { ErrorBanner, PageHeader, SelectField } from "./common";

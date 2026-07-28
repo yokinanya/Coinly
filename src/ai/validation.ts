@@ -1,5 +1,6 @@
 import { TRANSACTION_KINDS } from "../domain/constants";
 import type { AppData, TransactionDraft, TransactionKind } from "../domain/types";
+import { validateTransactionDraft as validateDomainDraft } from "../domain/operations";
 import dayjs from "dayjs";
 
 export interface CandidateValidation {
@@ -22,7 +23,9 @@ export interface SuggestionValidation {
 
 export function validateTransactionDraft(value: unknown, data: AppData): CandidateValidation {
   const errors: string[] = [];
-  const raw = value as Record<string, unknown>;
+  const raw = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
   const kind = normalizeKind(raw.kind);
   const amount = Number(raw.amount);
   const currency = normalizeCurrency(raw.currency, data);
@@ -41,21 +44,23 @@ export function validateTransactionDraft(value: unknown, data: AppData): Candida
   if (!kind || !accountId || !currency || !occurredAt || categoryId === null || tagIds === null) {
     return { valid: false, errors };
   }
-  return {
-    valid: true,
-    errors: [],
-    draft: {
-      kind,
-      accountId,
-      amount,
-      currency,
-      occurredAt,
-      categoryId: categoryId ?? undefined,
-      tagIds,
-      note: typeof raw.note === "string" ? raw.note : "",
-      relatedAccountId: matchOptionalId(raw.relatedAccountId, data.accounts) ?? undefined,
-    },
+  const draft: TransactionDraft = {
+    kind,
+    accountId,
+    amount,
+    currency,
+    occurredAt,
+    categoryId: categoryId ?? undefined,
+    tagIds,
+    note: typeof raw.note === "string" ? raw.note : "",
+    relatedAccountId: matchOptionalId(raw.relatedAccountId, data.accounts) ?? undefined,
+    targetAmount: optionalPositiveNumber(raw.targetAmount),
+    targetCurrency: optionalCurrency(raw.targetCurrency, data),
   };
+  const domainResult = validateDomainDraft(data, draft);
+  return domainResult.valid
+    ? { valid: true, errors: [], draft }
+    : { valid: false, errors: domainResult.errors, draft };
 }
 
 export function validateTransactionDrafts(value: unknown, data: AppData): readonly CandidateValidation[] {
@@ -136,6 +141,17 @@ function normalizeConfidence(value: unknown): number {
   const confidence = Number(value);
   if (!Number.isFinite(confidence)) return 0.5;
   return Math.min(1, Math.max(0, confidence));
+}
+
+function optionalPositiveNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : undefined;
+}
+
+function optionalCurrency(value: unknown, data: AppData): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return normalizeCurrency(value, data);
 }
 
 function categoryMatchesDraft(data: AppData, draft: TransactionDraft, categoryId: string): boolean {

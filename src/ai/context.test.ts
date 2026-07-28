@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildReportIndex } from "../domain/analytics";
 import { initialData } from "../domain/factory";
 import type { AiSettings, AppData, Category, Tag, Transaction } from "../domain/types";
-import { buildAnalysisContext, buildDraftContext, buildDraftSystemPrompt, buildQueryContext, buildSuggestionContext } from "./context";
+import { buildAnalysisContext } from "./analysisContext";
+import { buildDraftContext, buildDraftSystemPrompt, buildSuggestionContext } from "./context";
 
 describe("buildDraftContext", () => {
   it("keeps required account and currency context while trimming candidates", () => {
@@ -54,18 +55,6 @@ describe("buildSuggestionContext", () => {
     expect(context.categories[0]?.id).toBe("recent-category");
     expect(context.tags[0]?.id).toBe("recent-tag");
     expect(context.contextMeta.estimatedTokens).toBeLessThanOrEqual(32_000);
-  });
-});
-
-describe("buildQueryContext", () => {
-  it("includes question, summaries, catalog and recent transactions", () => {
-    const data = withRecentUsage(initialData());
-    const context = buildQueryContext(data, "餐饮花了多少？", { settings: settings(32_000), now: new Date("2026-05-18") });
-
-    expect(context.question).toBe("餐饮花了多少？");
-    expect(context.currentMonth).toHaveProperty("currencySummary");
-    expect(context.catalog.accounts).toHaveLength(data.accounts.length);
-    expect(context.recentTransactions[0]?.accountId).toBe(data.accounts[0]?.id);
   });
 });
 

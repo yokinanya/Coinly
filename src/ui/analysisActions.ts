@@ -1,5 +1,5 @@
 import { createAiProvider } from "../ai/provider";
-import type { AnalysisScope } from "../ai/context";
+import type { AnalysisScope } from "../ai/analysisContext";
 import type { AppData } from "../domain/types";
 
 export function runAiAnalysis(options: {

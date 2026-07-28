@@ -6,6 +6,7 @@ import { defaultAiSettings, selectTextModel } from "../ai/settings";
 import { bumpVersion, createId, createTransaction } from "../domain/factory";
 import { upsertTransaction, validateTransactionDraft as validateDomainDraft } from "../domain/operations";
 import type { AppData } from "../domain/types";
+import type { TransactionCommitResult } from "../ai/assistantTypes";
 import { AiComposer } from "./AiComposer";
 import { AiConversation } from "./AiConversation";
 import { sessionDefaultSelectionValue, sessionModelOptions, withSessionModel } from "./aiModelSelection";
@@ -31,34 +32,34 @@ export function AiHubView(props: AiHubViewProps) {
   const sessionData = useMemo(() => withSessionModel(props.data, selectedModel), [props.data, selectedModel]);
   const supportsVision = resolveAiModelCapabilities(selectTextModel(sessionData.aiSettings ?? defaultAiSettings())).supportsVision;
   const [draft, setDraft] = useState("");
-  const [attachment, setAttachment] = useState<AiAttachment>();
+  const [attachments, setAttachments] = useState<readonly AiAttachment[]>([]);
   const [managerOpen, setManagerOpen] = useState(false);
   const pending = props.session.messages.some((message) => message.pending);
 
   const submit = () => {
     const text = draft.trim();
-    if ((!text && !attachment) || pending) return;
-    void runTurn({ text, attachment, priorMessages: props.session.messages });
+    if ((!text && attachments.length === 0) || pending) return;
+    void runTurn({ text, attachments, priorMessages: props.session.messages });
   };
 
   const runTurn = async (options: {
     readonly text: string;
-    readonly attachment?: AiAttachment;
+    readonly attachments?: readonly AiAttachment[];
     readonly priorMessages: readonly AiHubMessage[];
   }) => {
-    const userMessage = userHubMessage(options.text, options.attachment);
+    const userMessage = userHubMessage(options.text, options.attachments);
     const assistantId = createId();
-    const messages = [...options.priorMessages, userMessage, pendingAssistantMessage(assistantId)];
+    const messages = [...options.priorMessages, userMessage, pendingAssistantMessage(assistantId, selectedModel)];
     const controller = new AbortController();
     props.setSession((current) => ({ ...current, controller, modelSelection: selectedModel, messages }));
     setDraft("");
-    setAttachment(undefined);
+    setAttachments([]);
     try {
       const stream = createAiProvider(sessionData.aiSettings).streamAssistant({
         data: sessionData,
         history: conversationHistory(options.priorMessages),
         input: options.text,
-        image: options.attachment?.file,
+        images: options.attachments?.map((attachment) => attachment.file),
         signal: controller.signal,
       });
       for await (const event of stream) applyAssistantEvent(props.setSession, assistantId, sessionData, event);
@@ -69,7 +70,9 @@ export function AiHubView(props: AiHubViewProps) {
         pending: false,
         error: !stopped,
         text: message.text || (stopped ? "已停止生成。" : errorMessage(error)),
-        tools: message.tools?.map((tool) => tool.state === "running" ? { ...tool, state: "complete", label: "执行已中断" } : tool),
+        tools: message.tools?.map((tool) => tool.state === "running"
+          ? { ...tool, state: stopped ? "cancelled" : "failed", label: stopped ? "执行已取消" : errorMessage(error) }
+          : tool),
       }));
     } finally {
       props.setSession((current) => current.controller === controller ? { ...current, controller: undefined } : current);
@@ -81,15 +84,15 @@ export function AiHubView(props: AiHubViewProps) {
     const userIndex = findLastUserIndex(props.session.messages);
     if (userIndex < 0) return;
     const user = props.session.messages[userIndex];
-    void runTurn({ text: user?.text ?? "", attachment: user?.attachment, priorMessages: props.session.messages.slice(0, userIndex) });
+    void runTurn({ text: user?.text ?? "", attachments: user?.attachments, priorMessages: props.session.messages.slice(0, userIndex) });
   };
 
   const newConversation = () => {
     props.session.controller?.abort();
     revokeSessionAttachments(props.session);
     props.setSession({ ...emptyAiHubSession(), modelSelection: defaultSelection });
-    if (attachment) URL.revokeObjectURL(attachment.url);
-    setAttachment(undefined);
+    revokeAttachments(attachments);
+    setAttachments([]);
     setDraft("");
   };
 
@@ -101,13 +104,58 @@ export function AiHubView(props: AiHubViewProps) {
       markInvalidCandidates(props, messageId, invalid);
       return;
     }
-    const updated = selected.reduce((data, candidate) => upsertTransaction(data, createTransaction(candidate.draft!)), props.data);
+    const transactions = selected.map((candidate) => createTransaction(candidate.draft!));
+    const updated = transactions.reduce((data, transaction) => upsertTransaction(data, transaction), props.data);
+    const result = commitResult(transactions);
     props.setData(updated);
     updateMessage(props.setSession, messageId, (current) => ({
       ...current,
       candidates: current.candidates?.filter((candidate) => !selected.some((item) => item.id === candidate.id)),
     }));
     Message.success(`已保存 ${selected.length} 笔交易`);
+    void startCommitConfirmation(result, message?.modelSelection ?? selectedModel, updated);
+  };
+
+  const startCommitConfirmation = async (
+    result: TransactionCommitResult,
+    modelSelection: string,
+    data: AppData,
+    existingMessageId?: string,
+  ) => {
+    const confirmationId = existingMessageId ?? createId();
+    const controller = new AbortController();
+    if (existingMessageId) {
+      updateMessage(props.setSession, confirmationId, (message) => ({ ...message, text: "", pending: true, error: false }));
+    } else {
+      props.setSession((current) => ({
+        ...current,
+        controller,
+        messages: [...current.messages, { ...pendingAssistantMessage(confirmationId, modelSelection), commitResult: result }],
+      }));
+    }
+    props.setSession((current) => ({ ...current, controller }));
+    try {
+      const commitData = withSessionModel(data, modelSelection);
+      const stream = createAiProvider(commitData.aiSettings).streamCommitConfirmation({
+        history: conversationHistory(props.session.messages),
+        result,
+        signal: controller.signal,
+      });
+      for await (const text of stream) {
+        updateMessage(props.setSession, confirmationId, (message) => ({ ...message, text: message.text + text }));
+      }
+      updateMessage(props.setSession, confirmationId, (message) => ({ ...message, pending: false }));
+    } catch (error) {
+      const stopped = abortError(error);
+      updateMessage(props.setSession, confirmationId, (message) => ({
+        ...message,
+        pending: false,
+        error: !stopped,
+        text: stopped ? "交易已写入，AI 确认已停止。" : "交易已写入，但 AI 确认回复失败。",
+      }));
+    } finally {
+      props.setSession((current) => current.controller === controller ? { ...current, controller: undefined } : current);
+    }
   };
 
   return (
@@ -125,24 +173,29 @@ export function AiHubView(props: AiHubViewProps) {
         onCopy={(text) => navigator.clipboard.writeText(text).then(() => Message.success("已复制回答")).catch(() => Message.error("复制失败"))}
         onCandidatesChange={(messageId, candidates) => updateMessage(props.setSession, messageId, (message) => ({ ...message, candidates }))}
         onCandidatesSave={saveCandidates}
+        onRetryCommit={(message) => {
+          if (message.commitResult && message.modelSelection) {
+            void startCommitConfirmation(message.commitResult, message.modelSelection, props.data, message.id);
+          }
+        }}
       />
       <div className="ai-composer-shell">
         <AiComposer
           draft={draft}
-          attachment={attachment}
+          attachments={attachments}
           options={options}
           selectedModel={selectedModel}
           supportsVision={supportsVision}
           pending={pending}
           setDraft={setDraft}
-          setAttachment={setAttachment}
+          setAttachments={setAttachments}
           selectModel={(modelSelection) => props.setSession((current) => ({ ...current, modelSelection }))}
           openManager={() => setManagerOpen(true)}
           submit={submit}
           stop={() => props.session.controller?.abort()}
         />
       </div>
-      {managerOpen && <AiProviderManagerDialog settings={configuredSettings} onClose={() => setManagerOpen(false)} onSave={(settings) => {
+      {managerOpen && <AiProviderManagerDialog settings={configuredSettings} accounts={props.data.accounts} onClose={() => setManagerOpen(false)} onSave={(settings) => {
         props.setData(bumpVersion({ ...props.data, aiSettings: settings }));
         props.setSession((current) => ({ ...current, modelSelection: sessionDefaultSelectionValue(settings) }));
         setManagerOpen(false);
@@ -160,7 +213,8 @@ function applyAssistantEvent(
   updateMessage(setSession, messageId, (message) => {
     if (event.type === "text-delta") return { ...message, text: message.text + event.text };
     if (event.type === "tool-start") return { ...message, tools: [...(message.tools ?? []), { callId: event.callId, tool: event.tool, label: event.label, state: "running" }] };
-    if (event.type === "tool-complete") return { ...message, tools: message.tools?.map((tool) => tool.callId === event.callId ? { ...tool, label: event.label, state: "complete" } : tool) };
+    if (event.type === "tool-complete") return { ...message, tools: message.tools?.map((tool) => tool.callId === event.callId ? { ...tool, label: event.label, state: "complete", summary: event.summary } : tool) };
+    if (event.type === "tool-failed") return { ...message, tools: message.tools?.map((tool) => tool.callId === event.callId ? { ...tool, label: event.label, state: "failed" } : tool) };
     if (event.type === "candidate-batch") return { ...message, candidates: [...(message.candidates ?? []), ...candidateBatch(data, event.drafts)] };
     return { ...message, text: event.text, pending: false };
   });
@@ -183,12 +237,12 @@ function markInvalidCandidates(props: AiHubViewProps, messageId: string, invalid
   Message.error("请先修正所选交易中的错误");
 }
 
-function userHubMessage(text: string, attachment?: AiAttachment): AiHubMessage {
-  return { id: createId(), role: "user", text, attachment };
+function userHubMessage(text: string, attachments?: readonly AiAttachment[]): AiHubMessage {
+  return { id: createId(), role: "user", text, attachments };
 }
 
-function pendingAssistantMessage(id: string): AiHubMessage {
-  return { id, role: "assistant", text: "", pending: true, tools: [], candidates: [] };
+function pendingAssistantMessage(id: string, modelSelection: string): AiHubMessage {
+  return { id, role: "assistant", text: "", pending: true, tools: [], candidates: [], modelSelection };
 }
 
 function findLastUserIndex(messages: readonly AiHubMessage[]): number {
@@ -204,4 +258,22 @@ function errorMessage(error: unknown): string {
 
 function abortError(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "name" in error && error.name === "AbortError");
+}
+
+function commitResult(transactions: readonly ReturnType<typeof createTransaction>[]): TransactionCommitResult {
+  return {
+    transactionIds: transactions.map((transaction) => transaction.id),
+    transactions: transactions.map((transaction) => ({
+      kind: transaction.kind,
+      accountId: transaction.accountId,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      occurredAt: transaction.occurredAt,
+      relatedAccountId: transaction.relatedAccountId,
+    })),
+  };
+}
+
+function revokeAttachments(attachments: readonly AiAttachment[]): void {
+  for (const attachment of attachments) URL.revokeObjectURL(attachment.url);
 }

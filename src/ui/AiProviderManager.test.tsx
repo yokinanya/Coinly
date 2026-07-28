@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiSettings } from "../domain/types";
+import { initialData } from "../domain/factory";
 import { AiProviderManagerDialog } from "./AiProviderManager";
 
 const { fetchAiProviderModels } = vi.hoisted(() => ({
@@ -71,6 +72,18 @@ describe("AiProviderManagerDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
     const saved = onSave.mock.calls[0][0] as AiSettings;
     expect(saved.providers?.[0]?.models.map((model) => model.model)).toContain("new-chat-model");
+  });
+
+  it("persists the AI default payment account independently of the model", () => {
+    const onSave = vi.fn();
+    const data = initialData();
+    render(<AiProviderManagerDialog settings={settings()} accounts={data.accounts} onClose={vi.fn()} onSave={onSave} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "AI 默认支付账户" }));
+    fireEvent.click(screen.getByRole("option", { name: /日常账户/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({ defaultPaymentAccountId: data.accounts[0].id });
   });
 
 });

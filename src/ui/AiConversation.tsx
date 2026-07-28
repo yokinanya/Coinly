@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, Copy, LoaderCircle, RefreshCcw } from "lucide-react";
+import { Bot, CheckCircle2, CircleX, Copy, LoaderCircle, RefreshCcw, Square } from "lucide-react";
 import { Message, MessageAction, MessageActions, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import type { AiHubMessage } from "./aiSession";
@@ -20,6 +20,7 @@ export function AiConversation(props: {
   readonly onCopy: (text: string) => void;
   readonly onCandidatesChange: (messageId: string, candidates: NonNullable<AiHubMessage["candidates"]>) => void;
   readonly onCandidatesSave: (messageId: string) => void;
+  readonly onRetryCommit: (message: AiHubMessage) => void;
 }) {
   return (
     <Conversation aria-live="polite" aria-busy={props.pending}>
@@ -36,6 +37,7 @@ export function AiConversation(props: {
               onRegenerate={props.onRegenerate}
               onCandidatesChange={props.onCandidatesChange}
               onCandidatesSave={props.onCandidatesSave}
+              onRetryCommit={props.onRetryCommit}
             />
           ))}
       </ConversationContent>
@@ -67,18 +69,25 @@ function AiMessage(props: {
   readonly onRegenerate: () => void;
   readonly onCandidatesChange: (messageId: string, candidates: NonNullable<AiHubMessage["candidates"]>) => void;
   readonly onCandidatesSave: (messageId: string) => void;
+  readonly onRetryCommit: (message: AiHubMessage) => void;
 }) {
   const assistant = props.message.role === "assistant";
   return (
     <Message from={props.message.role}>
       <MessageContent className={props.message.error ? "text-(--color-error)" : undefined}>
-        {props.message.attachment && <img className="max-h-72 max-w-full rounded-md object-contain" src={props.message.attachment.url} alt={props.message.attachment.name} />}
+        {props.message.attachments && props.message.attachments.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {props.message.attachments.map((attachment) => (
+              <img key={attachment.url} className="max-h-72 max-w-full rounded-md object-contain" src={attachment.url} alt={attachment.name} />
+            ))}
+          </div>
+        )}
         {props.message.text && (assistant
           ? <MessageResponse isAnimating={props.message.pending}>{props.message.text}</MessageResponse>
           : <p className="whitespace-pre-wrap">{props.message.text}</p>)}
         {props.message.pending && !props.message.text && <span className="inline-flex items-center gap-2 text-(--color-text-secondary)"><LoaderCircle className="animate-spin" size={15} aria-hidden="true" />正在思考…</span>}
       </MessageContent>
-      {props.message.tools?.map((tool) => <ToolStatus key={tool.callId} label={tool.label} running={tool.state === "running"} />)}
+      {props.message.tools?.map((tool) => <ToolStatus key={tool.callId} label={tool.label} state={tool.state} />)}
       {props.message.candidates && props.message.candidates.length > 0 && (
         <AiCandidateReview
           data={props.data}
@@ -93,14 +102,22 @@ function AiMessage(props: {
           <MessageAction label="重新生成" onClick={props.onRegenerate}><RefreshCcw size={15} aria-hidden="true" /></MessageAction>
         </MessageActions>
       )}
+      {assistant && props.latest && props.message.error && props.message.commitResult && (
+        <MessageActions>
+          <MessageAction label="重试确认" onClick={() => props.onRetryCommit(props.message)}><RefreshCcw size={15} aria-hidden="true" /></MessageAction>
+        </MessageActions>
+      )}
     </Message>
   );
 }
 
-function ToolStatus(props: { readonly label: string; readonly running: boolean }) {
+function ToolStatus(props: { readonly label: string; readonly state: "running" | "complete" | "failed" | "cancelled" }) {
   return (
     <div className="ai-tool-status" role="status">
-      {props.running ? <LoaderCircle className="animate-spin" size={14} aria-hidden="true" /> : <CheckCircle2 size={14} aria-hidden="true" />}
+      {props.state === "running" && <LoaderCircle className="animate-spin" size={14} aria-hidden="true" />}
+      {props.state === "complete" && <CheckCircle2 size={14} aria-hidden="true" />}
+      {props.state === "failed" && <CircleX size={14} aria-hidden="true" />}
+      {props.state === "cancelled" && <Square size={14} aria-hidden="true" />}
       <span>{props.label}</span>
     </div>
   );

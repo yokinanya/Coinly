@@ -487,13 +487,14 @@ export function Upload(props: {
   readonly disabled?: boolean;
   readonly beforeUpload?: (file: File) => unknown;
   readonly maxCount?: number;
+  readonly multiple?: boolean;
   readonly showUploadList?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <span>
       <span onClick={() => !props.disabled && inputRef.current?.click()}>{props.children}</span>
-      <input ref={inputRef} className="hidden" type="file" accept={props.accept} disabled={props.disabled} onChange={(event) => handleUpload(event, props.beforeUpload)} />
+      <input ref={inputRef} className="hidden" type="file" accept={props.accept} disabled={props.disabled} multiple={props.multiple} onChange={(event) => handleUpload(event, props.beforeUpload)} />
     </span>
   );
 }
@@ -501,9 +502,9 @@ export function Upload(props: {
 Upload.LIST_IGNORE = LIST_IGNORE;
 
 function handleUpload(event: ChangeEvent<HTMLInputElement>, beforeUpload?: (file: File) => unknown): void {
-  const file = event.currentTarget.files?.[0];
+  const files = [...(event.currentTarget.files ?? [])];
   event.currentTarget.value = "";
-  if (file) beforeUpload?.(file);
+  for (const file of files) beforeUpload?.(file);
 }
 
 function CheckableTag(props: { readonly checked?: boolean; readonly children: ReactNode; readonly onChange?: (checked: boolean) => void }) {

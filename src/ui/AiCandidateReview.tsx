@@ -75,6 +75,9 @@ function CandidateRow(props: {
               <span className="text-xs text-(--color-text-muted)">{draft.occurredAt}</span>
             </div>
             <p className="mt-1 truncate text-sm text-(--color-text-secondary)">{account}{category ? ` · ${category}` : ""}{draft.note ? ` · ${draft.note}` : ""}</p>
+            {props.candidate.sourceImageIndexes?.length
+              ? <p className="mt-1 text-xs text-(--color-text-muted)">来源图片：{props.candidate.sourceImageIndexes.map((index) => index + 1).join("、")}</p>
+              : null}
           </>
         ) : <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(props.candidate.raw, null, 2)}</pre>}
         {props.candidate.errors.length > 0 && <ul className="mt-2 list-disc pl-5 text-xs text-(--color-error)">{props.candidate.errors.map((error) => <li key={error}>{error}</li>)}</ul>}

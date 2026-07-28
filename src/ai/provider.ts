@@ -1,10 +1,16 @@
 import type { AiModelSettings, AiSettings, AppData, TransactionDraft } from "../domain/types";
-import { analysisScopeLabel, buildAnalysisContext, buildDraftSystemPrompt, buildSuggestionContext, type AnalysisScope } from "./context";
+import { analysisScopeLabel, buildAnalysisContext, type AnalysisScope } from "./analysisContext";
+import { buildDraftSystemPrompt, buildSuggestionContext } from "./context";
 import { runAssistant } from "./assistant";
-import type { AiAssistantEvent, AiAssistantRequest, AiAssistantResult } from "./assistantTypes";
+import type {
+  AiAssistantEvent,
+  AiAssistantRequest,
+  AiAssistantResult,
+  CommitConfirmationRequest,
+} from "./assistantTypes";
 import { readFileAsDataUrl } from "./media";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
-import { chatCompletionsUrl, requestChatCompletion } from "./openAiTransport";
+import { chatCompletionsUrl, requestChatCompletion, streamChatCompletion } from "./openAiTransport";
 import { parseDraftArrayContent, parseDraftContent, parseSuggestionContent } from "./responseParsing";
 import { defaultAiSettings, normalizeAiSettings, selectTextModel, withAiSelection, type NormalizedAiSettings } from "./settings";
 import type { CategoryTagSuggestion } from "./validation";
@@ -19,6 +25,7 @@ export interface AiProvider {
   suggestCategoryTag(transaction: TransactionDraft, data: AppData): Promise<CategoryTagSuggestion>;
   analyze(data: AppData, options?: { readonly scope?: AnalysisScope }): Promise<string>;
   streamAssistant(request: AiAssistantRequest): AsyncGenerator<AiAssistantEvent, AiAssistantResult>;
+  streamCommitConfirmation(request: CommitConfirmationRequest): AsyncGenerator<string, string>;
 }
 
 export function buildAnalysisInput(data: AppData): string {
@@ -101,6 +108,32 @@ class OpenAiCompatibleProvider implements AiProvider {
 
   streamAssistant(request: AiAssistantRequest): AsyncGenerator<AiAssistantEvent, AiAssistantResult> {
     return runAssistant(this.settings, this.settings.textModel, request);
+  }
+
+  async *streamCommitConfirmation(request: CommitConfirmationRequest): AsyncGenerator<string, string> {
+    const messages = [
+      {
+        role: "system",
+        content: [
+          "你是 Coinly 的交易写入确认助手。",
+          "只根据真实保存结果，用简短中文确认成功笔数、各币种金额和实际支付账户。",
+          "不要调用工具，不提供财务建议，不声称执行了保存结果之外的操作。",
+        ].join("\n"),
+      },
+      ...request.history.map((message) => ({ role: message.role, content: message.text })),
+      { role: "user", content: `Coinly 已完成本地写入：${JSON.stringify(request.result)}` },
+    ];
+    const stream = streamChatCompletion(this.settings, this.settings.textModel, messages, { signal: request.signal });
+    let text = "";
+    while (true) {
+      const next = await stream.next();
+      if (next.done) {
+        if (!text.trim()) throw new Error("AI 未返回写入确认");
+        return text;
+      }
+      text += next.value;
+      yield next.value;
+    }
   }
 }
 

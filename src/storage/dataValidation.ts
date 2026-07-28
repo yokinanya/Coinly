@@ -246,11 +246,17 @@ function referenceSets(data: AppData) {
 }
 
 function accountReferenceErrors(data: AppData, refs: ReturnType<typeof referenceSets>): readonly string[] {
-  return data.accounts.flatMap((account) => {
+  const currencyErrors = data.accounts.flatMap((account) => {
     const currencies = [account.currency, ...(account.currencyCodes ?? [])];
     return currencies.filter((currency) => !refs.currencies.has(currency))
       .map((currency) => `账户 ${account.id} 引用不存在的币种 ${currency}`);
   });
+  const defaultAccountErrors = missingOptionalRef(
+    refs.accounts,
+    data.aiSettings?.defaultPaymentAccountId,
+    `AI 默认支付账户 ${data.aiSettings?.defaultPaymentAccountId} 不存在`,
+  );
+  return [...currencyErrors, ...defaultAccountErrors];
 }
 
 function transactionReferenceErrors(data: AppData, refs: ReturnType<typeof referenceSets>): readonly string[] {

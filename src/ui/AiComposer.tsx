@@ -6,13 +6,13 @@ import type { AiAttachment } from "./aiSession";
 
 export function AiComposer(props: {
   readonly draft: string;
-  readonly attachment?: AiAttachment;
+  readonly attachments: readonly AiAttachment[];
   readonly options: readonly SessionModelOption[];
   readonly selectedModel: string;
   readonly supportsVision: boolean;
   readonly pending: boolean;
   readonly setDraft: (value: string) => void;
-  readonly setAttachment: (attachment?: AiAttachment) => void;
+  readonly setAttachments: React.Dispatch<React.SetStateAction<readonly AiAttachment[]>>;
   readonly selectModel: (value: string) => void;
   readonly openManager: () => void;
   readonly submit: () => void;
@@ -20,7 +20,7 @@ export function AiComposer(props: {
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const canSubmit = Boolean(props.draft.trim() || props.attachment);
+  const canSubmit = Boolean(props.draft.trim() || props.attachments.length);
   return (
     <form className="ai-composer" aria-label="AI 消息" onSubmit={(event) => { event.preventDefault(); props.submit(); }}>
       <Input.TextArea
@@ -38,17 +38,26 @@ export function AiComposer(props: {
         aria-label="输入消息"
         placeholder="问账、分析或记录一笔交易…"
       />
-      {props.attachment && <Attachment attachment={props.attachment} remove={() => props.setAttachment(undefined)} />}
+      {props.attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {props.attachments.map((attachment) => (
+            <Attachment
+              key={attachment.url}
+              attachment={attachment}
+              remove={() => props.setAttachments((current) => current.filter((item) => item.url !== attachment.url))}
+            />
+          ))}
+        </div>
+      )}
       <div className="flex min-h-11 items-center justify-between gap-2">
         <Upload
           accept="image/*"
           beforeUpload={(file) => {
-            if (props.attachment) URL.revokeObjectURL(props.attachment.url);
-            props.setAttachment({ file, url: URL.createObjectURL(file), name: file.name });
+            props.setAttachments((current) => [...current, { file, url: URL.createObjectURL(file), name: file.name }]);
             return Upload.LIST_IGNORE;
           }}
           disabled={!props.supportsVision || props.pending}
-          maxCount={1}
+          multiple
           showUploadList={false}
         >
           <button className="ai-composer-icon" type="button" aria-label="插入图片" title={props.supportsVision ? "插入图片" : "当前模型不支持图片"} disabled={!props.supportsVision || props.pending}>

@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { ACCOUNT_KINDS } from "../../domain/constants";
-import { createBase, upsertEntity, validStatementDay } from "../../domain/operations";
+import { createBase, deleteEntity, upsertEntity, validStatementDay } from "../../domain/operations";
 import { accountCurrencyOptions } from "../../domain/recurring";
 import type { Account } from "../../domain/types";
 import { ConfirmDialog, MultiSelectField } from "../common";
 import { ACCOUNT_KIND_LABELS } from "../labels";
 import { Button } from "../components";
-import { optionalNumber, removeEntity, requireName, runUpdate } from "./managerActions";
+import { optionalNumber, requireName, runUpdate } from "./managerActions";
 import { Field, ManagerDialog, SelectField } from "./ManagerCommon";
 import type { ManagerProps } from "./ManagerCommon";
 
@@ -22,7 +22,13 @@ export function AccountManager({ data, setData, setMessage }: ManagerProps) {
   }, setMessage) && setOpen(false);
   const remove = () => {
     if (!pending) return;
-    removeEntity({ data, setData, setMessage, key: "accounts", id: pending.id });
+    runUpdate(() => {
+      const deleted = deleteEntity(data, "accounts", pending.id);
+      const aiSettings = deleted.aiSettings?.defaultPaymentAccountId === pending.id
+        ? { ...deleted.aiSettings, defaultPaymentAccountId: undefined }
+        : deleted.aiSettings;
+      setData({ ...deleted, aiSettings });
+    }, setMessage);
     setPending(undefined);
   };
 
@@ -35,7 +41,13 @@ export function AccountManager({ data, setData, setMessage }: ManagerProps) {
       <ManagerDialog open={open} title="账户" onClose={() => setOpen(false)} onSave={save}>
         <AccountFields data={data} draft={draft} setDraft={setDraft} />
       </ManagerDialog>
-      <ConfirmDialog open={Boolean(pending)} title="确认删除" description={pending ? `确认删除“${pending.name}”？有关联交易时会被阻止。` : ""} onCancel={() => setPending(undefined)} onConfirm={remove} />
+      <ConfirmDialog
+        open={Boolean(pending)}
+        title="确认删除"
+        description={pending ? deleteDescription(data, pending) : ""}
+        onCancel={() => setPending(undefined)}
+        onConfirm={remove}
+      />
     </section>
   );
 }
@@ -144,4 +156,11 @@ function isMultiCurrencyAccount(account: Account): boolean {
 function editAccount(account: Account, setDraft: (account: Account) => void, setOpen: (open: boolean) => void) {
   setDraft(account);
   setOpen(true);
+}
+
+function deleteDescription(data: ManagerProps["data"], account: Account): string {
+  const defaultNotice = data.aiSettings?.defaultPaymentAccountId === account.id
+    ? "该账户同时是 AI 默认支付账户，删除后会清除该设置。"
+    : "";
+  return `确认删除“${account.name}”？有关联交易时会被阻止。${defaultNotice}`;
 }

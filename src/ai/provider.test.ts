@@ -122,8 +122,8 @@ describe("streamAssistant", () => {
       requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       if (requests.length === 1) {
         return sseResponse([
-          { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-query", type: "function", function: { name: "query_ledger", arguments: "{\"question\":\"本月餐饮" } }] } }] },
-          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "花了多少？\"}" } }] } }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-query", type: "function", function: { name: "query_ledger", arguments: "{\"metric\":\"sum\"," } }] } }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "\"groupBy\":\"category\"}" } }] } }] },
         ]);
       }
       return sseResponse([
@@ -150,7 +150,7 @@ describe("streamAssistant", () => {
     expect(requests[1]?.messages).toEqual(expect.arrayContaining([expect.objectContaining({ role: "tool", tool_call_id: "call-query" })]));
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "tool-start", tool: "query_ledger" }),
-      expect.objectContaining({ type: "tool-complete", label: "已查询账本" }),
+      expect.objectContaining({ type: "tool-complete", label: "已查询 0 笔交易" }),
       { type: "text-delta", text: "本月餐饮支出" },
       { type: "text-delta", text: "为 38 CNY。" },
       { type: "finish", text: "本月餐饮支出为 38 CNY。" },
@@ -187,13 +187,13 @@ describe("streamAssistant", () => {
     ]);
   });
 
-  it("fails explicitly after four consecutive tool rounds", async () => {
+  it("fails explicitly when the model repeats an identical tool call", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => sseResponse([{
       choices: [{ delta: { tool_calls: [{
         index: 0,
         id: "call-query",
         type: "function",
-        function: { name: "query_ledger", arguments: "{\"question\":\"继续查询\"}" },
+        function: { name: "query_ledger", arguments: "{\"metric\":\"count\",\"groupBy\":\"none\"}" },
       }] } }],
     }])));
     const provider = createAiProvider({
@@ -204,8 +204,8 @@ describe("streamAssistant", () => {
     });
 
     await expect(consume(provider.streamAssistant({ data: initialData(), history: [], input: "复杂问题" })))
-      .rejects.toThrow("工具调用次数过多");
-    expect(fetch).toHaveBeenCalledTimes(4);
+      .rejects.toThrow("重复工具调用循环");
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
 

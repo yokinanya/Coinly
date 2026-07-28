@@ -7,7 +7,7 @@ import type { StoredVaultState } from "../storage/indexedDb";
 import { syncData, type SyncResult } from "../sync/syncClient";
 import type { StatsFilter } from "./StatsView";
 import { VaultGate } from "./VaultGate";
-import { emptyAiHubSession, type AiHubSession } from "./aiSession";
+import { emptyAiHubSession, revokeSessionAttachments, type AiHubSession } from "./aiSession";
 import { NavigationSidebar } from "./appNavigation";
 import { replaceUnknownPath, VIEW_PATHS, viewFromPath, type ViewId } from "./appRoutes";
 import { StatusBar } from "./common";
@@ -41,6 +41,7 @@ export function App() {
   const [saveToken, setSaveToken] = useState<SaveToken>({ version: 0 });
   const [viewId, setViewId] = useState<ViewId>(() => viewFromPath(window.location.pathname));
   const [aiSession, setAiSession] = useState<AiHubSession>(() => emptyAiHubSession());
+  const aiSessionRef = useRef(aiSession);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [syncResolution, setSyncResolution] = useState<SyncResolution>();
   const [status, setStatus] = useState<StatusMessage>({ tone: "info", text: "正在加载本地账本" });
@@ -87,6 +88,12 @@ export function App() {
   useEffect(() => {
     applyTheme(data?.uiSettings?.theme ?? "system");
   }, [data?.uiSettings?.theme]);
+
+  useEffect(() => {
+    aiSessionRef.current = aiSession;
+  }, [aiSession]);
+
+  useEffect(() => () => revokeSessionAttachments(aiSessionRef.current), []);
 
   const content = useMemo(
     () => renderView({ viewId, data, token: saveToken, aiSession, setAiSession, setData, setVaultData, setStatus, setViewId }),

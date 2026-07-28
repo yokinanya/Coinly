@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeAiSettings } from "./settings";
-import { streamChatCompletion } from "./openAiTransport";
+import { requestChatCompletion, streamChatCompletion } from "./openAiTransport";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -64,6 +64,26 @@ describe("streamChatCompletion", () => {
     const stream = streamChatCompletion(settings(), { model: "model" }, [], { signal: controller.signal });
 
     await expect(stream.next()).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("surfaces the provider error body", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(
+      JSON.stringify({ error: { message: "model is unavailable" } }),
+      { status: 400, statusText: "Bad Request" },
+    )));
+
+    await expect(requestChatCompletion(settings(), { model: "model" }, []))
+      .rejects.toThrow("model is unavailable");
+  });
+
+  it("rejects incomplete streamed tool calls", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(
+      "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call\",\"function\":{\"name\":\"query_ledger\"}}]}}]}\n\ndata: [DONE]\n\n",
+      { headers: { "content-type": "text/event-stream" } },
+    )));
+    const stream = streamChatCompletion(settings(), { model: "model" }, []);
+
+    await expect(stream.next()).rejects.toThrow("不完整的工具调用");
   });
 });
 

@@ -3,13 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { defaultAiSettings, normalizeAiSettings, type NormalizedAiModelSettings, type NormalizedAiProviderSettings } from "../ai/settings";
 import { resolveAiModelCapabilities } from "../ai/modelCapabilities";
 import { createId } from "../domain/factory";
-import type { AiModelSettings, AiProviderSettings, AiSettings } from "../domain/types";
+import type { Account, AiModelSettings, AiProviderSettings, AiSettings } from "../domain/types";
 import { ConfirmDialog, ErrorBanner, TextField } from "./common";
-import { Button, Modal, Switch } from "./components";
+import { Button, Modal, Select, Switch } from "./components";
 import { AiModelCatalogDialog } from "./AiModelCatalogDialog";
 
 export function AiProviderManagerDialog(props: {
   readonly settings?: AiSettings;
+  readonly accounts?: readonly Account[];
   readonly onClose: () => void;
   readonly onSave: (settings: AiSettings) => void;
 }) {
@@ -18,6 +19,9 @@ export function AiProviderManagerDialog(props: {
   const save = () => {
     try {
       validateProviderSettings(draft);
+      if (draft.defaultPaymentAccountId && !props.accounts?.some((account) => account.id === draft.defaultPaymentAccountId)) {
+        throw new Error("AI 默认支付账户不存在");
+      }
       props.onSave(normalizeAiSettings(draft));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "AI 提供商配置无效");
@@ -34,6 +38,21 @@ export function AiProviderManagerDialog(props: {
     >
       <div className="ai-provider-dialog-content">
         <ErrorBanner message={error} />
+        {props.accounts && (
+          <label className="block rounded-md border border-(--color-border) p-3">
+            <span className="label">AI 默认支付账户</span>
+            <p className="mb-2 mt-1 text-xs text-(--color-text-secondary)">仅在 AI 记账未识别到明确支付来源时使用。</p>
+            <Select
+              aria-label="AI 默认支付账户"
+              value={draft.defaultPaymentAccountId ?? ""}
+              options={[
+                { value: "", label: "不设置" },
+                ...props.accounts.map((account) => ({ value: account.id, label: `${account.name} · ${account.currency}` })),
+              ]}
+              onChange={(value) => setDraft(normalizeAiSettings({ ...draft, defaultPaymentAccountId: String(value) || undefined }))}
+            />
+          </label>
+        )}
         <AiProviderManager settings={draft} onChange={(settings) => setDraft(normalizeAiSettings(settings))} />
       </div>
     </Modal>

@@ -43,7 +43,8 @@ export async function requestChatCompletion(
   options: { readonly tools?: readonly unknown[]; readonly signal?: AbortSignal } = {},
 ): Promise<ChatResponse> {
   const response = await fetchCompletion(settings, model, messages, { ...options, stream: false });
-  return response.json() as Promise<ChatResponse>;
+  const payload = await response.json() as unknown;
+  return parseChatResponse(payload);
 }
 
 export async function* streamChatCompletion(
@@ -98,7 +99,7 @@ async function fetchCompletion(
     }),
     signal: options.signal,
   });
-  if (!response.ok) throw new Error(`AI 调用失败：${response.status} ${response.statusText}`);
+  if (!response.ok) throw new Error(await responseError(response));
   return response;
 }
 
@@ -147,7 +148,12 @@ function mergeToolCalls(target: Map<number, MutableToolCall>, deltas: NonNullabl
 }
 
 function finalizedToolCalls(calls: Map<number, MutableToolCall>): readonly ToolCall[] {
-  return [...calls.entries()].sort(([left], [right]) => left - right).map(([, call]) => call);
+  return [...calls.entries()].sort(([left], [right]) => left - right).map(([, call]) => {
+    if (!call.id || !call.function.name || !call.function.arguments) {
+      throw new Error("AI 返回了不完整的工具调用");
+    }
+    return call;
+  });
 }
 
 export function chatCompletionsUrl(baseUrl: string): string {
@@ -155,4 +161,40 @@ export function chatCompletionsUrl(baseUrl: string): string {
   if (trimmed.endsWith("/chat/completions")) throw new Error("AI Base URL 不能包含 /chat/completions");
   if (!trimmed) throw new Error("AI Base URL 不能为空");
   return `${trimmed}/chat/completions`;
+}
+
+function parseChatResponse(value: unknown): ChatResponse {
+  if (!value || typeof value !== "object" || !("choices" in value) || !Array.isArray(value.choices)) {
+    throw new Error("AI 返回的响应缺少 choices 数组");
+  }
+  const choices = value.choices as readonly unknown[];
+  const valid = choices.every((choice) => {
+    if (!choice || typeof choice !== "object" || !("message" in choice)) return false;
+    const message = choice.message;
+    return message === undefined || (typeof message === "object" && message !== null);
+  });
+  if (!valid) throw new Error("AI 返回的 message 结构无效");
+  return value as ChatResponse;
+}
+
+async function responseError(response: Response): Promise<string> {
+  const detail = await response.text();
+  const normalized = providerErrorMessage(detail).replace(/\s+/g, " ").trim();
+  const summary = normalized ? `：${normalized.slice(0, 500)}` : "";
+  return `AI 调用失败：${response.status} ${response.statusText}${summary}`;
+}
+
+function providerErrorMessage(detail: string): string {
+  try {
+    const value = JSON.parse(detail) as unknown;
+    if (!value || typeof value !== "object" || !("error" in value)) return detail;
+    const error = value.error;
+    if (typeof error === "string") return error;
+    if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+      return error.message;
+    }
+    return detail;
+  } catch {
+    return detail;
+  }
 }

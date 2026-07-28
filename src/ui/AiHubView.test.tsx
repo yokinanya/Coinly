@@ -8,10 +8,11 @@ import { AiHubView } from "./AiHubView";
 import { emptyAiHubSession, type AiHubSession } from "./aiSession";
 
 const streamAssistant = vi.fn<(request: AiAssistantRequest) => AsyncGenerator<AiAssistantEvent, AiAssistantResult>>();
+const streamCommitConfirmation = vi.fn();
 
 vi.mock("../ai/provider", async (importOriginal) => {
   const original = await importOriginal<typeof import("../ai/provider")>();
-  return { ...original, createAiProvider: () => ({ streamAssistant }) };
+  return { ...original, createAiProvider: () => ({ streamAssistant, streamCommitConfirmation }) };
 });
 
 vi.mock("./toastApi", () => ({
@@ -21,7 +22,9 @@ vi.mock("./toastApi", () => ({
 describe("AiHubView", () => {
   beforeEach(() => {
     streamAssistant.mockReset();
+    streamCommitConfirmation.mockReset();
     streamAssistant.mockImplementation(() => eventStream([{ type: "text-delta", text: "已完成。" }, { type: "finish", text: "已完成。" }]));
+    streamCommitConfirmation.mockImplementation(() => textStream(["已写入 1 笔，共 38 CNY。"]));
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   });
 
@@ -41,7 +44,7 @@ describe("AiHubView", () => {
   it("renders streaming text and concise tool status", async () => {
     streamAssistant.mockImplementation(() => eventStream([
       { type: "tool-start", callId: "query", tool: "query_ledger", label: "正在查询账本…" },
-      { type: "tool-complete", callId: "query", tool: "query_ledger", label: "已查询账本" },
+      { type: "tool-complete", callId: "query", tool: "query_ledger", label: "已查询账本", summary: "{}" },
       { type: "text-delta", text: "餐饮支出为 " },
       { type: "text-delta", text: "**38 CNY**。" },
       { type: "finish", text: "餐饮支出为 **38 CNY**。" },
@@ -93,15 +96,17 @@ describe("AiHubView", () => {
     expect(screen.getByRole("heading", { name: "你的财务 Copilot" })).toBeTruthy();
   });
 
-  it("sends images through a vision-capable session model", async () => {
+  it("sends multiple images in stable order through a vision-capable session model", async () => {
     renderHub(initialData(), vi.fn());
     fireEvent.click(screen.getByRole("button", { name: "切换模型" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: "vision-model" }));
-    const file = new File(["receipt"], "receipt.png", { type: "image/png" });
-    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [file] } });
-    sendMessage("识别这张图片");
-    expect(await screen.findByRole("img", { name: "receipt.png" })).toBeTruthy();
-    expect(streamAssistant.mock.calls[0]?.[0].image).toBe(file);
+    const first = new File(["first"], "first.png", { type: "image/png" });
+    const second = new File(["second"], "second.png", { type: "image/png" });
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [first, second] } });
+    sendMessage("识别这些图片");
+    expect(await screen.findByRole("img", { name: "first.png" })).toBeTruthy();
+    expect(await screen.findByRole("img", { name: "second.png" })).toBeTruthy();
+    expect(streamAssistant.mock.calls[0]?.[0].images).toEqual([first, second]);
   });
 
   it("requires explicit batch confirmation before saving candidates", async () => {
@@ -120,6 +125,10 @@ describe("AiHubView", () => {
     expect(setData).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "保存所选（1）" }));
     expect(setData).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("已写入 1 笔，共 38 CNY。")).toBeTruthy();
+    expect(streamCommitConfirmation).toHaveBeenCalledWith(expect.objectContaining({
+      result: expect.objectContaining({ transactionIds: [expect.any(String)] }),
+    }));
   });
 
   it("shows invalid candidate errors instead of silently dropping them", async () => {
@@ -133,6 +142,26 @@ describe("AiHubView", () => {
     expect(await screen.findByText("金额必须大于 0")).toBeTruthy();
     expect(screen.getByText("AI 返回的账户无法匹配当前账本")).toBeTruthy();
     expect((screen.getByRole("button", { name: "保存所选（0）" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("retries a failed confirmation without writing the transaction twice", async () => {
+    const data = withAiSettings(initialData());
+    const setData = vi.fn();
+    streamAssistant.mockImplementation(() => eventStream([
+      { type: "candidate-batch", drafts: [sampleDraft(data)] },
+      { type: "finish", text: "请确认。" },
+    ]));
+    streamCommitConfirmation
+      .mockImplementationOnce(() => failingTextStream())
+      .mockImplementationOnce(() => textStream(["确认成功。"]));
+    renderHub(data, setData);
+    sendMessage("记录午餐");
+    fireEvent.click(await screen.findByRole("button", { name: "保存所选（1）" }));
+
+    expect(await screen.findByText("交易已写入，但 AI 确认回复失败。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "重试确认" }));
+    expect(await screen.findByText("确认成功。")).toBeTruthy();
+    expect(setData).toHaveBeenCalledTimes(1);
   });
 
   it("stops an active stream without turning cancellation into an error", async () => {
@@ -188,6 +217,17 @@ async function* eventStream(events: readonly AiAssistantEvent[]): AsyncGenerator
   for (const event of events) yield event;
   const finish = [...events].reverse().find((event) => event.type === "finish");
   return { text: finish?.type === "finish" ? finish.text : "", transactionDrafts: [] };
+}
+
+async function* textStream(chunks: readonly string[]) {
+  for (const chunk of chunks) yield chunk;
+  return chunks.join("");
+}
+
+async function* failingTextStream() {
+  await Promise.resolve();
+  yield "";
+  throw new Error("provider failed");
 }
 
 async function* abortableStream(request: AiAssistantRequest): AsyncGenerator<AiAssistantEvent, AiAssistantResult> {
