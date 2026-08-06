@@ -69,6 +69,7 @@ export function AiHubView(props: AiHubViewProps) {
         ...message,
         pending: false,
         error: !stopped,
+        phase: stopped ? "completed" : "failed",
         text: message.text || (stopped ? "已停止生成。" : errorMessage(error)),
         tools: message.tools?.map((tool) => tool.state === "running"
           ? { ...tool, state: stopped ? "cancelled" : "failed", label: stopped ? "执行已取消" : errorMessage(error) }
@@ -110,6 +111,7 @@ export function AiHubView(props: AiHubViewProps) {
     props.setData(updated);
     updateMessage(props.setSession, messageId, (current) => ({
       ...current,
+      phase: "saving",
       candidates: current.candidates?.filter((candidate) => !selected.some((item) => item.id === candidate.id)),
     }));
     Message.success(`已保存 ${selected.length} 笔交易`);
@@ -125,7 +127,7 @@ export function AiHubView(props: AiHubViewProps) {
     const confirmationId = existingMessageId ?? createId();
     const controller = new AbortController();
     if (existingMessageId) {
-      updateMessage(props.setSession, confirmationId, (message) => ({ ...message, text: "", pending: true, error: false }));
+      updateMessage(props.setSession, confirmationId, (message) => ({ ...message, text: "", pending: true, error: false, phase: "thinking" }));
     } else {
       props.setSession((current) => ({
         ...current,
@@ -142,15 +144,16 @@ export function AiHubView(props: AiHubViewProps) {
         signal: controller.signal,
       });
       for await (const text of stream) {
-        updateMessage(props.setSession, confirmationId, (message) => ({ ...message, text: message.text + text }));
+        updateMessage(props.setSession, confirmationId, (message) => ({ ...message, text: message.text + text, phase: "answering" }));
       }
-      updateMessage(props.setSession, confirmationId, (message) => ({ ...message, pending: false }));
+      updateMessage(props.setSession, confirmationId, (message) => ({ ...message, pending: false, phase: "completed" }));
     } catch (error) {
       const stopped = abortError(error);
       updateMessage(props.setSession, confirmationId, (message) => ({
         ...message,
         pending: false,
         error: !stopped,
+        phase: stopped ? "completed" : "failed",
         text: stopped ? "交易已写入，AI 确认已停止。" : "交易已写入，但 AI 确认回复失败。",
       }));
     } finally {
@@ -211,12 +214,13 @@ function applyAssistantEvent(
   event: AiAssistantEvent,
 ): void {
   updateMessage(setSession, messageId, (message) => {
-    if (event.type === "text-delta") return { ...message, text: message.text + event.text };
+    if (event.type === "phase") return { ...message, phase: event.phase };
+    if (event.type === "text-delta") return { ...message, text: message.text + event.text, phase: "answering" };
     if (event.type === "tool-start") return { ...message, tools: [...(message.tools ?? []), { callId: event.callId, tool: event.tool, label: event.label, state: "running" }] };
     if (event.type === "tool-complete") return { ...message, tools: message.tools?.map((tool) => tool.callId === event.callId ? { ...tool, label: event.label, state: "complete", summary: event.summary } : tool) };
-    if (event.type === "tool-failed") return { ...message, tools: message.tools?.map((tool) => tool.callId === event.callId ? { ...tool, label: event.label, state: "failed" } : tool) };
+    if (event.type === "tool-failed") return { ...message, phase: "failed", tools: message.tools?.map((tool) => tool.callId === event.callId ? { ...tool, label: event.label, state: "failed" } : tool) };
     if (event.type === "candidate-batch") return { ...message, candidates: [...(message.candidates ?? []), ...candidateBatch(data, event.drafts)] };
-    return { ...message, text: event.text, pending: false };
+    return { ...message, text: event.text, pending: false, phase: event.phase ?? "completed" };
   });
 }
 
@@ -242,7 +246,7 @@ function userHubMessage(text: string, attachments?: readonly AiAttachment[]): Ai
 }
 
 function pendingAssistantMessage(id: string, modelSelection: string): AiHubMessage {
-  return { id, role: "assistant", text: "", pending: true, tools: [], candidates: [], modelSelection };
+  return { id, role: "assistant", text: "", pending: true, phase: "thinking", tools: [], candidates: [], modelSelection };
 }
 
 function findLastUserIndex(messages: readonly AiHubMessage[]): number {

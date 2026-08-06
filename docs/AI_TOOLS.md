@@ -4,14 +4,13 @@ Coinly provides a session-scoped financial Copilot. The user writes naturally; t
 
 The assistant streams text and concise tool status into the conversation. Completed user and assistant turns are sent with follow-up requests so pronouns and comparisons work across turns. Conversation state remains in application memory while navigating between pages, but it is never added to `AppData`, synced, exported, or restored after a refresh.
 
-- Ledger questions route to read-only ledger queries.
-- Analysis requests route to report generation.
+- Ledger questions and analysis requests route to the read-only `read_ledger` tool.
 - Transaction-oriented messages route to draft candidates that require user confirmation.
 - Inserted images are sent together to the selected vision-capable session model. The model decides whether they are multiple pages of one transaction or separate receipts.
 
 Transaction candidates appear as an editable batch. Valid candidates are selected by default; invalid candidates remain visible with their validation errors. No AI action writes financial data without explicit confirmation in the candidate UI.
 
-Ledger questions use structured local queries; filtering, grouping, counts, and currency totals are computed in Coinly rather than by the model. Transaction candidates are emitted directly through `prepare_transactions`, validated locally, and may use the configured AI default payment account only when the user did not specify a payment source.
+Ledger questions use structured local queries; filtering, grouping, counts, currency totals, and analysis contexts are computed in Coinly rather than by the model. The model-visible tools are limited to `read_ledger` and `prepare_transactions`. Transaction candidates are emitted through `prepare_transactions`, validated locally, and may use the configured AI default account only when the user did not specify an account.
 
 After selected candidates are saved, Coinly sends the real transaction IDs and final fields back to the same session model for a short confirmation. A failed confirmation never rolls back or repeats the local write.
 
@@ -29,4 +28,4 @@ The provider manager supports adding and deleting providers, configuring multipl
 
 The model-level image capability switch controls whether image insertion is available for that model. Provider cards do not have a separate enable/disable state: remove an unused provider instead.
 
-The provider manager also stores one optional AI default payment account. It is independent of the selected provider and model and only fills a missing payment source for AI-generated candidates.
+The provider manager also stores one optional AI default account. The persisted field remains `defaultPaymentAccountId` for compatibility. It is independent of the selected provider and model and fills a missing account for AI-generated candidates.

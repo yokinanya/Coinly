@@ -87,6 +87,7 @@ function AiMessage(props: {
           : <p className="whitespace-pre-wrap">{props.message.text}</p>)}
         {props.message.pending && !props.message.text && <span className="inline-flex items-center gap-2 text-(--color-text-secondary)"><LoaderCircle className="animate-spin" size={15} aria-hidden="true" />正在思考…</span>}
       </MessageContent>
+      {assistant && props.message.phase && <PhaseStatus phase={props.message.phase} />}
       {props.message.tools?.map((tool) => <ToolStatus key={tool.callId} label={tool.label} state={tool.state} />)}
       {props.message.candidates && props.message.candidates.length > 0 && (
         <AiCandidateReview
@@ -109,6 +110,21 @@ function AiMessage(props: {
       )}
     </Message>
   );
+}
+
+function PhaseStatus(props: { readonly phase: NonNullable<AiHubMessage["phase"]> }) {
+  const labels = {
+    thinking: "正在理解请求…",
+    reading: "正在读取账本…",
+    answering: "正在整理回答…",
+    clarifying: "需要补充信息",
+    reviewing: "待确认保存",
+    saving: "正在保存交易…",
+    completed: "已完成",
+    failed: "处理失败",
+  } as const;
+  if (props.phase === "completed") return null;
+  return <div className="ai-tool-status" role="status"><span>{labels[props.phase]}</span></div>;
 }
 
 function ToolStatus(props: { readonly label: string; readonly state: "running" | "complete" | "failed" | "cancelled" }) {

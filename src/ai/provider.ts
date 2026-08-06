@@ -14,6 +14,7 @@ import { chatCompletionsUrl, requestChatCompletion, streamChatCompletion } from 
 import { parseDraftArrayContent, parseDraftContent, parseSuggestionContent } from "./responseParsing";
 import { defaultAiSettings, normalizeAiSettings, selectTextModel, withAiSelection, type NormalizedAiSettings } from "./settings";
 import type { CategoryTagSuggestion } from "./validation";
+import { COMMIT_CONFIRMATION_POLICY } from "./promptPolicy";
 
 export { chatCompletionsUrl, parseDraftArrayContent, parseDraftContent };
 export type { AiAssistantEvent, AiAssistantRequest, AiAssistantResult };
@@ -114,11 +115,7 @@ class OpenAiCompatibleProvider implements AiProvider {
     const messages = [
       {
         role: "system",
-        content: [
-          "你是 Coinly 的交易写入确认助手。",
-          "只根据真实保存结果，用简短中文确认成功笔数、各币种金额和实际支付账户。",
-          "不要调用工具，不提供财务建议，不声称执行了保存结果之外的操作。",
-        ].join("\n"),
+        content: COMMIT_CONFIRMATION_POLICY,
       },
       ...request.history.map((message) => ({ role: message.role, content: message.text })),
       { role: "user", content: `Coinly 已完成本地写入：${JSON.stringify(request.result)}` },

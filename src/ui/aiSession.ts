@@ -1,4 +1,4 @@
-import type { AiConversationMessage, AiToolName, TransactionCommitResult } from "../ai/assistantTypes";
+import type { AiAssistantPhase, AiConversationMessage, AiToolName, TransactionCommitResult } from "../ai/assistantTypes";
 import type { AppData, TransactionDraft } from "../domain/types";
 import { createId } from "../domain/factory";
 import { validateTransactionDraft } from "../ai/validation";
@@ -37,6 +37,7 @@ export interface AiHubMessage {
   readonly candidates?: readonly AiCandidate[];
   readonly modelSelection?: string;
   readonly commitResult?: TransactionCommitResult;
+  readonly phase?: AiAssistantPhase;
 }
 
 export interface AiHubSession {

@@ -79,7 +79,7 @@ describe("AiProviderManagerDialog", () => {
     const data = initialData();
     render(<AiProviderManagerDialog settings={settings()} accounts={data.accounts} onClose={vi.fn()} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "AI 默认支付账户" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI 默认账户" }));
     fireEvent.click(screen.getByRole("option", { name: /日常账户/ }));
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
 

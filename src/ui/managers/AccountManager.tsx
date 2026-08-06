@@ -160,7 +160,7 @@ function editAccount(account: Account, setDraft: (account: Account) => void, set
 
 function deleteDescription(data: ManagerProps["data"], account: Account): string {
   const defaultNotice = data.aiSettings?.defaultPaymentAccountId === account.id
-    ? "该账户同时是 AI 默认支付账户，删除后会清除该设置。"
+    ? "该账户同时是 AI 默认账户，删除后会清除该设置。"
     : "";
   return `确认删除“${account.name}”？有关联交易时会被阻止。${defaultNotice}`;
 }

@@ -1,10 +1,11 @@
-import type { AiModelSettings, AppData } from "../domain/types";
+import type { AiModelSettings } from "../domain/types";
 import { buildDraftContext } from "./context";
 import { readFileAsDataUrl } from "./media";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
 import { streamChatCompletion, type ChatMessage, type ToolCall } from "./openAiTransport";
 import type { NormalizedAiSettings } from "./settings";
 import { executeAssistantTool, knownToolName, ledgerTools, toolStartLabel } from "./assistantTools";
+import { buildAssistantPrompt } from "./promptPolicy";
 import type {
   AiAssistantEvent,
   AiAssistantRequest,
@@ -19,19 +20,21 @@ export async function* runAssistant(
   request: AiAssistantRequest,
 ): AsyncGenerator<AiAssistantEvent, AiAssistantResult> {
   const messages: unknown[] = [
-    { role: "system", content: assistantPrompt(request.data, model, settings.defaultPaymentAccountId, request.images?.length ?? 0) },
+    { role: "system", content: buildAssistantPrompt(settings.defaultPaymentAccountId, request.images?.length ?? 0, buildDraftContext(request.data, { settings: model })) },
     ...historyMessages(request.history),
     { role: "user", content: await userContent(request.input, request.images, model) },
   ];
   const transactionDrafts: PreparedTransactionCandidate[] = [];
   const completedCalls = new Set<string>();
   let fullText = "";
+  yield { type: "phase", phase: "thinking" };
   while (true) {
     const message = yield* consumeRound(settings, model, request, messages, (text) => {
       fullText += text;
     });
     const calls = message.tool_calls ?? [];
     if (calls.length === 0) {
+      yield { type: "phase", phase: looksLikeClarification(fullText) ? "clarifying" : "completed" };
       yield { type: "finish", text: fullText };
       return { text: fullText, transactionDrafts };
     }
@@ -39,6 +42,7 @@ export async function* runAssistant(
     for (const call of calls) {
       assertNotRepeated(call, completedCalls);
       const tool = knownToolName(call.function.name);
+      yield { type: "phase", phase: tool === "read_ledger" ? "reading" : "reviewing" };
       yield { type: "tool-start", callId: call.id, tool, label: toolStartLabel(tool) };
       try {
         const result = executeAssistantTool({
@@ -50,6 +54,7 @@ export async function* runAssistant(
         });
         transactionDrafts.push(...result.candidates);
         if (result.candidates.length > 0) {
+          yield { type: "phase", phase: "reviewing" };
           yield { type: "candidate-batch", drafts: result.candidates };
         }
         yield { type: "tool-complete", callId: call.id, tool, label: result.completeLabel, summary: result.traceSummary };
@@ -113,21 +118,6 @@ function assistantHistoryContent(message: AiConversationMessage): string {
     : message.text;
 }
 
-function assistantPrompt(data: AppData, model: AiModelSettings, defaultAccountId: string | undefined, imageCount: number): string {
-  const draftContext = buildDraftContext(data, { settings: model });
-  return [
-    "你是 Coinly 的个人财务 Copilot。需要账本事实时必须调用工具，不要编造或自行计算账本数据。",
-    "自行判断是否调用查账、分析或交易候选工具，不要向用户展示内部路由。",
-    "prepare_transactions 只生成待确认候选，必须明确说明尚未保存，等待用户确认。",
-    "绝不能声称已经创建、修改或删除交易、分类、标签、预算或订阅。",
-    "涉及金额时必须带币种代码或币种名称；没有足够数据时直接说明无法确定。",
-    "输出简洁中文 Markdown，并理解之前的会话内容以回答连续追问。",
-    `AI 默认支付账户 ID：${defaultAccountId ?? "未配置"}；未明确账户的收入、支出、退款和转账候选都使用该默认账户。`,
-    `当前消息图片数量：${imageCount}；sourceImageIndexes 只能引用当前消息中的图片，编号从 0 开始；没有图片时省略该字段。`,
-    `记账字段上下文：${JSON.stringify(draftContext)}`,
-  ].join("\n");
-}
-
 function assertNotRepeated(call: ToolCall, completedCalls: Set<string>): void {
   const signature = `${call.function.name}:${call.function.arguments}`;
   if (completedCalls.has(signature)) {
@@ -138,4 +128,8 @@ function assertNotRepeated(call: ToolCall, completedCalls: Set<string>): void {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "工具执行失败";
+}
+
+function looksLikeClarification(text: string): boolean {
+  return /请(?:提供|补充|告诉我)|还需要(?:确认|提供)|缺少/.test(text);
 }

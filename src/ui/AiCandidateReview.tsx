@@ -23,7 +23,7 @@ export function AiCandidateReview(props: {
   return (
     <section className="ai-candidate-review" aria-label="待确认交易">
       <header>
-        <div><h3>待确认交易</h3><p>{props.candidates.length} 笔候选，保存前可编辑或取消选择</p></div>
+        <div><h3>待确认交易</h3><p>{props.candidates.length} 笔候选，尚未写入账本；保存前可编辑或取消选择</p></div>
         <Button variant="primary" disabled={selectedCount === 0} onClick={props.onSave}>保存所选（{selectedCount}）</Button>
       </header>
       <div className="ai-candidate-list">

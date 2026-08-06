@@ -122,7 +122,7 @@ describe("streamAssistant", () => {
       requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       if (requests.length === 1) {
         return sseResponse([
-          { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-query", type: "function", function: { name: "query_ledger", arguments: "{\"metric\":\"sum\"," } }] } }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-query", type: "function", function: { name: "read_ledger", arguments: "{\"operation\":\"query\",\"metric\":\"sum\"," } }] } }] },
           { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "\"groupBy\":\"category\"}" } }] } }] },
         ]);
       }
@@ -146,11 +146,11 @@ describe("streamAssistant", () => {
 
     expect(requests).toHaveLength(2);
     expect(requests[0]).toMatchObject({ model: "tool-model", stream: true, tool_choice: "auto" });
-    expect(requests[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: "query_ledger" }) })]));
+    expect(requests[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: "read_ledger" }) })]));
     expect(requests[1]?.messages).toEqual(expect.arrayContaining([expect.objectContaining({ role: "tool", tool_call_id: "call-query" })]));
     expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: "tool-start", tool: "query_ledger" }),
-      expect.objectContaining({ type: "tool-complete", label: "已查询 0 笔交易" }),
+      expect.objectContaining({ type: "tool-start", tool: "read_ledger" }),
+      expect.objectContaining({ type: "tool-complete", label: "已读取 0 笔交易" }),
       { type: "text-delta", text: "本月餐饮支出" },
       { type: "text-delta", text: "为 38 CNY。" },
       { type: "finish", text: "本月餐饮支出为 38 CNY。" },
@@ -193,7 +193,7 @@ describe("streamAssistant", () => {
         index: 0,
         id: "call-query",
         type: "function",
-        function: { name: "query_ledger", arguments: "{\"metric\":\"count\",\"groupBy\":\"none\"}" },
+        function: { name: "read_ledger", arguments: "{\"operation\":\"query\",\"metric\":\"count\",\"groupBy\":\"none\"}" },
       }] } }],
     }])));
     const provider = createAiProvider({

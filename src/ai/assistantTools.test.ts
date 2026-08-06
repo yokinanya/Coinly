@@ -43,6 +43,23 @@ describe("prepare_transactions", () => {
   });
 });
 
+describe("read_ledger", () => {
+  it("uses one read tool for query and analysis operations", () => {
+    const tools = ledgerTools(0);
+    expect(tools.map((item) => (item as { function: { name: string } }).function.name)).toEqual(["read_ledger", "prepare_transactions"]);
+    const data = withAccounts();
+    const settings = normalizeAiSettings(data.aiSettings);
+    const query = executeAssistantTool({
+      call: { id: "query", type: "function", function: { name: "read_ledger", arguments: JSON.stringify({ operation: "query", metric: "sum", groupBy: "none" }) } },
+      data,
+      model: settings.textModel,
+      settings,
+    });
+    expect(query.tool).toBe("read_ledger");
+    expect(query.completeLabel).toContain("已读取");
+  });
+});
+
 function execute(data: ReturnType<typeof withAccounts>, candidates: readonly unknown[]) {
   return executeRaw(data, JSON.stringify({ candidates }));
 }

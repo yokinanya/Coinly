@@ -112,25 +112,25 @@ function objectValue(value: unknown, message: string): Record<string, unknown> {
 
 function rejectUnknown(value: Record<string, unknown>, allowed: readonly string[]): void {
   const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
-  if (unknown.length > 0) throw new Error(`query_ledger 包含未知字段：${unknown.join(", ")}`);
+  if (unknown.length > 0) throw new Error(`read_ledger 包含未知字段：${unknown.join(", ")}`);
 }
 
 function enumValue<T extends string>(value: unknown, values: readonly T[], name: string): T {
-  if (typeof value !== "string" || !values.includes(value as T)) throw new Error(`query_ledger 的 ${name} 无效`);
+  if (typeof value !== "string" || !values.includes(value as T)) throw new Error(`read_ledger 的 ${name} 无效`);
   return value as T;
 }
 
 function optionalEnums<T extends string>(value: unknown, values: readonly T[], name: string): readonly T[] | undefined {
   const items = optionalStrings(value, name);
   if (!items) return undefined;
-  if (!items.every((item) => values.includes(item as T))) throw new Error(`query_ledger 的 ${name} 包含无效值`);
+  if (!items.every((item) => values.includes(item as T))) throw new Error(`read_ledger 的 ${name} 包含无效值`);
   return items as readonly T[];
 }
 
 function optionalStrings(value: unknown, name: string): readonly string[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && item.trim())) {
-    throw new Error(`query_ledger 的 ${name} 必须是非空字符串数组`);
+    throw new Error(`read_ledger 的 ${name} 必须是非空字符串数组`);
   }
   return value.map((item) => item.trim());
 }
@@ -138,7 +138,7 @@ function optionalStrings(value: unknown, name: string): readonly string[] | unde
 function optionalDate(value: unknown, name: string): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(value)) {
-    throw new Error(`query_ledger 的 ${name} 必须是 ISO 日期`);
+    throw new Error(`read_ledger 的 ${name} 必须是 ISO 日期`);
   }
   return value;
 }

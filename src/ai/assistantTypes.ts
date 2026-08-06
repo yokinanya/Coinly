@@ -22,15 +22,26 @@ export interface AiAssistantRequest {
   readonly signal?: AbortSignal;
 }
 
-export type AiToolName = "query_ledger" | "analyze_ledger" | "prepare_transactions";
+export type AiToolName = "read_ledger" | "prepare_transactions";
+
+export type AiAssistantPhase =
+  | "thinking"
+  | "reading"
+  | "answering"
+  | "clarifying"
+  | "reviewing"
+  | "saving"
+  | "completed"
+  | "failed";
 
 export type AiAssistantEvent =
+  | { readonly type: "phase"; readonly phase: AiAssistantPhase }
   | { readonly type: "text-delta"; readonly text: string }
   | { readonly type: "tool-start"; readonly callId: string; readonly tool: AiToolName; readonly label: string }
   | { readonly type: "tool-complete"; readonly callId: string; readonly tool: AiToolName; readonly label: string; readonly summary: string }
   | { readonly type: "tool-failed"; readonly callId: string; readonly tool: AiToolName; readonly label: string }
   | { readonly type: "candidate-batch"; readonly drafts: readonly unknown[] }
-  | { readonly type: "finish"; readonly text: string };
+  | { readonly type: "finish"; readonly text: string; readonly phase?: Extract<AiAssistantPhase, "clarifying" | "completed"> };
 
 export interface AiAssistantResult {
   readonly text: string;

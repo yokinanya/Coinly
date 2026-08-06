@@ -40,10 +40,10 @@ export function AiProviderManagerDialog(props: {
         <ErrorBanner message={error} />
         {props.accounts && (
           <label className="block rounded-md border border-(--color-border) p-3">
-            <span className="label">AI 默认支付账户</span>
-            <p className="mb-2 mt-1 text-xs text-(--color-text-secondary)">仅在 AI 记账未识别到明确支付来源时使用。</p>
+            <span className="label">AI 默认账户</span>
+            <p className="mb-2 mt-1 text-xs text-(--color-text-secondary)">仅在 AI 记账未识别到明确账户时使用。</p>
             <Select
-              aria-label="AI 默认支付账户"
+              aria-label="AI 默认账户"
               value={draft.defaultPaymentAccountId ?? ""}
               options={[
                 { value: "", label: "不设置" },

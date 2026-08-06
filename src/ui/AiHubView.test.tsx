@@ -43,8 +43,8 @@ describe("AiHubView", () => {
 
   it("renders streaming text and concise tool status", async () => {
     streamAssistant.mockImplementation(() => eventStream([
-      { type: "tool-start", callId: "query", tool: "query_ledger", label: "正在查询账本…" },
-      { type: "tool-complete", callId: "query", tool: "query_ledger", label: "已查询账本", summary: "{}" },
+      { type: "tool-start", callId: "query", tool: "read_ledger", label: "正在读取账本…" },
+      { type: "tool-complete", callId: "query", tool: "read_ledger", label: "已读取账本", summary: "{}" },
       { type: "text-delta", text: "餐饮支出为 " },
       { type: "text-delta", text: "**38 CNY**。" },
       { type: "finish", text: "餐饮支出为 **38 CNY**。" },
@@ -52,7 +52,7 @@ describe("AiHubView", () => {
     renderHub(initialData(), vi.fn());
     sendMessage("餐饮花了多少？");
 
-    expect(await screen.findByText("已查询账本")).toBeTruthy();
+    expect(await screen.findByText("已读取账本")).toBeTruthy();
     expect(await screen.findByText("38 CNY")).toBeTruthy();
     expect(streamAssistant).toHaveBeenCalledTimes(1);
   });

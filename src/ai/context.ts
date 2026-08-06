@@ -1,6 +1,7 @@
 import { TRANSACTION_KINDS } from "../domain/constants";
 import type { Account, AiModelSettings, AppData, Category, Tag, Transaction } from "../domain/types";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
+import { buildDraftPolicy } from "./promptPolicy";
 
 export interface ContextMeta {
   readonly tokenBudget: number;
@@ -151,25 +152,7 @@ function fitSuggestionContext(
 }
 
 function draftInstructions(context: DraftContext, mode: DraftMode): string {
-  const outputRules = mode === "batch"
-    ? [
-      "你是 Coinly 的批量记账解析器。只输出一个合法 JSON 数组，不要 Markdown，不要解释。",
-      "数组中的每个元素都必须符合 TransactionDraft：kind, accountId, amount, currency, occurredAt, tagIds, note 为必填字段。",
-      "只解析用户明确提供的交易，不要补造或推断不存在的交易。",
-    ]
-    : [
-      "你是 Coinly 的记账解析器。只输出一个合法 JSON 对象，不要 Markdown，不要解释。",
-      "JSON 必须符合 TransactionDraft：kind, accountId, amount, currency, occurredAt, tagIds, note 为必填字段。",
-    ];
-  return [
-    ...outputRules,
-    "kind 只能从这些枚举中选择。不要输出中文类型，不要发明新类型。",
-    "常见映射：消费/付款/买东西=expense，工资/收款=income，退款/退货=refund，转账=transfer，信用卡还款=credit_payment。",
-    "accountId 必须使用上下文账户 id；categoryId 必须使用候选分类 id；tagIds 必须是标签 id 数组。",
-    "候选分类和标签可能因上下文预算被裁剪。无法确定分类或标签时省略 categoryId 或输出空 tagIds。",
-    "currency 必须使用账本币种代码；occurredAt 只输出日期，不要输出具体时间；amount 必须是正数。",
-    `上下文：${JSON.stringify(context)}`,
-  ].join("\n");
+  return buildDraftPolicy(JSON.stringify(context), mode);
 }
 
 function rankCategories(data: AppData): readonly Pick<Category, "id" | "name" | "direction">[] {

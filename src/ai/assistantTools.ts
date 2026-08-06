@@ -22,15 +22,17 @@ const CANDIDATE_FIELDS = [
 ] as const;
 
 export const LEDGER_TOOLS = [
-  tool("query_ledger", [
-    "在本地账本上执行确定性查询。涉及金额、数量、账户、分类、标签或历史交易时必须调用。",
-    "startAt/endAt 使用 ISO 日期；endAt 包含当天。metric 必须为 count 或 sum；groupBy 必须明确指定。",
+  tool("read_ledger", [
+    "读取本地账本并返回确定性结果。涉及金额、数量、账户、分类、标签、历史交易或趋势时调用。",
+    "operation=query 时提供 metric 和 groupBy；operation=analyze 时提供 scope，或同时提供 startAt/endAt。",
     "不要自行计算或补全工具没有返回的数据。",
   ].join("\n"), {
     type: "object",
     properties: {
+      operation: { type: "string", enum: ["query", "analyze"] },
       startAt: { type: "string", description: "可选的起始 ISO 日期" },
       endAt: { type: "string", description: "可选的结束 ISO 日期，包含当天" },
+      scope: { type: "string", enum: ["current-month", "last-3-months", "last-6-months", "year-to-date"] },
       accountIds: stringArray("账户 ID"),
       categoryIds: stringArray("分类 ID"),
       tagIds: stringArray("标签 ID，需全部匹配"),
@@ -39,16 +41,7 @@ export const LEDGER_TOOLS = [
       metric: { type: "string", enum: ["count", "sum"] },
       groupBy: { type: "string", enum: ["none", "month", "account", "category", "tag", "kind", "currency"] },
     },
-    required: ["metric", "groupBy"],
-    additionalProperties: false,
-  }),
-  tool("analyze_ledger", "生成账本聚合分析。支持预设范围或明确的自定义起止日期，只返回本地计算结果。", {
-    type: "object",
-    properties: {
-      scope: { type: "string", enum: ["current-month", "last-3-months", "last-6-months", "year-to-date"] },
-      startAt: { type: "string", description: "自定义范围起始 ISO 日期" },
-      endAt: { type: "string", description: "自定义范围结束 ISO 日期" },
-    },
+    required: ["operation"],
     additionalProperties: false,
   }),
   tool("prepare_transactions", [
@@ -56,7 +49,7 @@ export const LEDGER_TOOLS = [
     "只使用用户文字或图片能够确认的事实，不补造金额、日期或账户。amount 必须为正数，退款使用 refund。",
     "expense/refund 的 accountId 是支付或退款账户；transfer 的 accountId 是源账户、relatedAccountId 是目标账户；",
     "credit_payment 的 accountId 是信用卡、relatedAccountId 是还款来源。",
-    "用户明确给出的账户优先。未给出账户时可省略对应字段，由 Coinly 应用 AI 默认账户。",
+    "用户明确给出的账户优先。未给出账户时可省略对应字段，由 Coinly 应用默认账户。",
     "账户、分类、标签必须使用上下文 ID。note 只写商户或用途，不写解释。",
     "有图片时，多图可表示同一交易的多页或多笔交易；不得重复候选，sourceImageIndexes 使用从 0 开始的图片序号。没有图片时不要输出 sourceImageIndexes。",
   ].join("\n"), {
@@ -113,32 +106,31 @@ export function executeAssistantTool(options: {
 }): ToolExecution {
   const toolName = knownToolName(options.call.function.name);
   const args = parseArguments(options.call);
-  if (toolName === "query_ledger") return queryLedger(options.data, args);
-  if (toolName === "analyze_ledger") return analyzeLedger(options.data, options.model, args);
+  if (toolName === "read_ledger") return readLedger(options.data, options.model, args);
   return prepareTransactions(options.data, options.settings.defaultPaymentAccountId, args, options.imageCount ?? 0);
 }
 
 export function toolStartLabel(name: AiToolName): string {
-  if (name === "query_ledger") return "正在查询账本…";
-  if (name === "analyze_ledger") return "正在分析账本…";
+  if (name === "read_ledger") return "正在读取账本…";
   return "正在生成交易候选…";
 }
 
 export function knownToolName(value: string): AiToolName {
-  if (value === "query_ledger" || value === "analyze_ledger" || value === "prepare_transactions") return value;
+  if (value === "read_ledger" || value === "prepare_transactions") return value;
   throw new Error(`AI 请求了不允许的工具：${value}`);
 }
 
-function queryLedger(data: AppData, args: Record<string, unknown>): ToolExecution {
-  const result = executeLedgerQuery(data, parseLedgerQuery(args));
-  return execution("query_ledger", result, [], `已查询 ${result.matchedCount} 笔交易`, JSON.stringify(result));
-}
-
-function analyzeLedger(data: AppData, model: AiModelSettings, args: Record<string, unknown>): ToolExecution {
-  rejectUnknown(args, ["scope", "startAt", "endAt"], "analyze_ledger");
+function readLedger(data: AppData, model: AiModelSettings, args: Record<string, unknown>): ToolExecution {
+  rejectUnknown(args, ["operation", "scope", "startAt", "endAt", "accountIds", "categoryIds", "tagIds", "kinds", "currencies", "metric", "groupBy"], "read_ledger");
+  if (args.operation === "query") {
+    const queryArgs = omitKeys(args, ["operation", "scope"]);
+    const content = executeLedgerQuery(data, parseLedgerQuery(queryArgs));
+    return execution("read_ledger", content, [], `已读取 ${content.matchedCount} 笔交易`, JSON.stringify(content));
+  }
+  if (args.operation !== "analyze") throw new Error("read_ledger 的 operation 无效");
   if (args.startAt !== undefined || args.endAt !== undefined) {
     if (typeof args.startAt !== "string" || typeof args.endAt !== "string") {
-      throw new Error("analyze_ledger 自定义范围必须同时提供 startAt 和 endAt");
+      throw new Error("read_ledger 自定义分析范围必须同时提供 startAt 和 endAt");
     }
     const content = executeLedgerQuery(data, parseLedgerQuery({
       startAt: args.startAt,
@@ -146,12 +138,11 @@ function analyzeLedger(data: AppData, model: AiModelSettings, args: Record<strin
       metric: "sum",
       groupBy: "month",
     }));
-    return execution("analyze_ledger", content, [], "已分析自定义范围", JSON.stringify(content));
+    return execution("read_ledger", content, [], "已分析自定义范围", JSON.stringify(content));
   }
-  const scope = args.scope;
-  if (!isAnalysisScope(scope)) throw new Error("analyze_ledger 的 scope 无效");
-  const content = buildAnalysisContext(data, { settings: model, analysisScope: scope });
-  return execution("analyze_ledger", content, [], `已分析${analysisScopeLabel(scope)}`, JSON.stringify(content));
+  if (!isAnalysisScope(args.scope)) throw new Error("read_ledger 的 scope 无效");
+  const content = buildAnalysisContext(data, { settings: model, analysisScope: args.scope });
+  return execution("read_ledger", content, [], `已分析${analysisScopeLabel(args.scope)}`, JSON.stringify(content));
 }
 
 function prepareTransactions(
@@ -204,7 +195,7 @@ function applyDefaultAccount(
 function withoutImageIndexes(toolDefinition: (typeof LEDGER_TOOLS)[number]) {
   if (toolDefinition.function.name !== "prepare_transactions") return toolDefinition;
   const properties = toolDefinition.function.parameters.properties as Record<string, unknown>;
-  const { sourceImageIndexes: _sourceImageIndexes, ...withoutSourceImageIndexes } = properties;
+  const withoutSourceImageIndexes = omitKeys(properties, ["sourceImageIndexes"]);
   return {
     ...toolDefinition,
     function: {
@@ -249,6 +240,10 @@ function validImageIndexes(value: unknown): value is readonly number[] {
 function rejectUnknown(value: Record<string, unknown>, allowed: readonly string[], toolName: string): void {
   const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unknown.length > 0) throw new Error(`${toolName} 包含未知字段：${unknown.join(", ")}`);
+}
+
+function omitKeys(value: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 }
 
 function stringArray(description: string) {
