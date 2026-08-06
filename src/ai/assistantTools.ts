@@ -55,10 +55,10 @@ export const LEDGER_TOOLS = [
     "当用户要求记账、添加或创建交易时调用；一次调用直接返回所有待确认候选，不得再次请求解析。",
     "只使用用户文字或图片能够确认的事实，不补造金额、日期或账户。amount 必须为正数，退款使用 refund。",
     "expense/refund 的 accountId 是支付或退款账户；transfer 的 accountId 是源账户、relatedAccountId 是目标账户；",
-    "credit_payment 的 accountId 是信用卡、relatedAccountId 是还款来源；income 不应用默认支付账户。",
-    "用户明确给出的账户优先。未给出支付来源时可省略对应字段，由 Coinly 应用 AI 默认支付账户。",
+    "credit_payment 的 accountId 是信用卡、relatedAccountId 是还款来源。",
+    "用户明确给出的账户优先。未给出账户时可省略对应字段，由 Coinly 应用 AI 默认账户。",
     "账户、分类、标签必须使用上下文 ID。note 只写商户或用途，不写解释。",
-    "多图可表示同一交易的多页或多笔交易；不得重复候选，sourceImageIndexes 使用从 0 开始的图片序号。",
+    "有图片时，多图可表示同一交易的多页或多笔交易；不得重复候选，sourceImageIndexes 使用从 0 开始的图片序号。没有图片时不要输出 sourceImageIndexes。",
   ].join("\n"), {
     type: "object",
     properties: {
@@ -88,6 +88,13 @@ export const LEDGER_TOOLS = [
     additionalProperties: false,
   }),
 ] as const;
+
+export function ledgerTools(imageCount: number): readonly unknown[] {
+  if (imageCount > 0) return LEDGER_TOOLS;
+  return LEDGER_TOOLS.map((item) => item.function.name === "prepare_transactions"
+    ? withoutImageIndexes(item)
+    : item);
+}
 
 export interface ToolExecution {
   readonly tool: AiToolName;
@@ -185,13 +192,27 @@ function applyDefaultAccount(
   defaultAccountId: string | undefined,
 ): PreparedTransactionCandidate {
   if (!defaultAccountId || !data.accounts.some((account) => account.id === defaultAccountId)) return candidate;
-  if ((candidate.kind === "expense" || candidate.kind === "refund" || candidate.kind === "transfer") && !candidate.accountId) {
+  if ((candidate.kind === "income" || candidate.kind === "expense" || candidate.kind === "refund" || candidate.kind === "transfer") && !candidate.accountId) {
     return { ...candidate, accountId: defaultAccountId };
   }
   if (candidate.kind === "credit_payment" && !candidate.relatedAccountId) {
     return { ...candidate, relatedAccountId: defaultAccountId };
   }
   return candidate;
+}
+
+function withoutImageIndexes(toolDefinition: (typeof LEDGER_TOOLS)[number]) {
+  if (toolDefinition.function.name !== "prepare_transactions") return toolDefinition;
+  const properties = toolDefinition.function.parameters.properties as Record<string, unknown>;
+  const { sourceImageIndexes: _sourceImageIndexes, ...withoutSourceImageIndexes } = properties;
+  return {
+    ...toolDefinition,
+    function: {
+      ...toolDefinition.function,
+      description: toolDefinition.function.description.replace("有图片时，多图可表示同一交易的多页或多笔交易；不得重复候选，sourceImageIndexes 使用从 0 开始的图片序号。没有图片时不要输出 sourceImageIndexes。", "当前消息没有图片，不要输出 sourceImageIndexes。"),
+      parameters: { ...toolDefinition.function.parameters, properties: withoutSourceImageIndexes },
+    },
+  };
 }
 
 function parseArguments(call: ToolCall): Record<string, unknown> {

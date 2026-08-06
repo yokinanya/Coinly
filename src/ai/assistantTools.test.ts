@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { initialData } from "../domain/factory";
 import type { AiSettings } from "../domain/types";
-import { executeAssistantTool } from "./assistantTools";
+import { executeAssistantTool, ledgerTools } from "./assistantTools";
 import { normalizeAiSettings } from "./settings";
 
 describe("prepare_transactions", () => {
@@ -19,7 +19,7 @@ describe("prepare_transactions", () => {
       expect.objectContaining({ kind: "expense", accountId: "default" }),
       expect.objectContaining({ kind: "transfer", accountId: "default" }),
       expect.objectContaining({ kind: "credit_payment", accountId: "credit", relatedAccountId: "default" }),
-      expect.not.objectContaining({ accountId: "default" }),
+      expect.objectContaining({ kind: "income", accountId: "default" }),
     ]);
     expect(explicit.candidates[0]).toEqual(expect.objectContaining({ accountId: "explicit" }));
   });
@@ -32,13 +32,22 @@ describe("prepare_transactions", () => {
     expect(() => executeRaw(data, "null")).toThrow("参数必须是对象");
     expect(() => executeRaw(data, "{\"candidates\":[],\"extra\":true}")).toThrow("未知字段");
   });
+
+  it("does not expose source image indexes without images", () => {
+    const prepareTool = ledgerTools(0).find((tool) => (tool as { function?: { name?: string } }).function?.name === "prepare_transactions") as {
+      function: { parameters: { properties: Record<string, unknown> } };
+    };
+    expect(prepareTool.function.parameters.properties.sourceImageIndexes).toBeUndefined();
+    expect(() => executeRaw(withAccounts(), JSON.stringify({ candidates: [candidate("expense", { sourceImageIndexes: [0] })] }), 0))
+      .toThrow("引用了不存在的图片");
+  });
 });
 
 function execute(data: ReturnType<typeof withAccounts>, candidates: readonly unknown[]) {
   return executeRaw(data, JSON.stringify({ candidates }));
 }
 
-function executeRaw(data: ReturnType<typeof withAccounts>, args: string) {
+function executeRaw(data: ReturnType<typeof withAccounts>, args: string, imageCount = 3) {
   const settings = normalizeAiSettings(data.aiSettings);
   return executeAssistantTool({
     call: {
@@ -49,7 +58,7 @@ function executeRaw(data: ReturnType<typeof withAccounts>, args: string) {
     data,
     model: settings.textModel,
     settings,
-    imageCount: 3,
+    imageCount,
   });
 }
 

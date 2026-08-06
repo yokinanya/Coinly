@@ -4,7 +4,7 @@ import { readFileAsDataUrl } from "./media";
 import { resolveAiModelCapabilities } from "./modelCapabilities";
 import { streamChatCompletion, type ChatMessage, type ToolCall } from "./openAiTransport";
 import type { NormalizedAiSettings } from "./settings";
-import { executeAssistantTool, knownToolName, LEDGER_TOOLS, toolStartLabel } from "./assistantTools";
+import { executeAssistantTool, knownToolName, ledgerTools, toolStartLabel } from "./assistantTools";
 import type {
   AiAssistantEvent,
   AiAssistantRequest,
@@ -19,7 +19,7 @@ export async function* runAssistant(
   request: AiAssistantRequest,
 ): AsyncGenerator<AiAssistantEvent, AiAssistantResult> {
   const messages: unknown[] = [
-    { role: "system", content: assistantPrompt(request.data, model, settings.defaultPaymentAccountId) },
+    { role: "system", content: assistantPrompt(request.data, model, settings.defaultPaymentAccountId, request.images?.length ?? 0) },
     ...historyMessages(request.history),
     { role: "user", content: await userContent(request.input, request.images, model) },
   ];
@@ -69,7 +69,7 @@ async function* consumeRound(
   messages: readonly unknown[],
   append: (text: string) => void,
 ): AsyncGenerator<AiAssistantEvent, ChatMessage> {
-  const stream = streamChatCompletion(settings, model, messages, { tools: LEDGER_TOOLS, signal: request.signal });
+  const stream = streamChatCompletion(settings, model, messages, { tools: ledgerTools(request.images?.length ?? 0), signal: request.signal });
   while (true) {
     const next = await stream.next();
     if (next.done) return next.value;
@@ -113,7 +113,7 @@ function assistantHistoryContent(message: AiConversationMessage): string {
     : message.text;
 }
 
-function assistantPrompt(data: AppData, model: AiModelSettings, defaultAccountId?: string): string {
+function assistantPrompt(data: AppData, model: AiModelSettings, defaultAccountId: string | undefined, imageCount: number): string {
   const draftContext = buildDraftContext(data, { settings: model });
   return [
     "你是 Coinly 的个人财务 Copilot。需要账本事实时必须调用工具，不要编造或自行计算账本数据。",
@@ -122,7 +122,8 @@ function assistantPrompt(data: AppData, model: AiModelSettings, defaultAccountId
     "绝不能声称已经创建、修改或删除交易、分类、标签、预算或订阅。",
     "涉及金额时必须带币种代码或币种名称；没有足够数据时直接说明无法确定。",
     "输出简洁中文 Markdown，并理解之前的会话内容以回答连续追问。",
-    `AI 默认支付账户 ID：${defaultAccountId ?? "未配置"}。`,
+    `AI 默认支付账户 ID：${defaultAccountId ?? "未配置"}；未明确账户的收入、支出、退款和转账候选都使用该默认账户。`,
+    `当前消息图片数量：${imageCount}；sourceImageIndexes 只能引用当前消息中的图片，编号从 0 开始；没有图片时省略该字段。`,
     `记账字段上下文：${JSON.stringify(draftContext)}`,
   ].join("\n");
 }
